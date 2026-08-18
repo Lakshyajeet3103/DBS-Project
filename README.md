@@ -1,5 +1,3 @@
-# DBS-Project
-DBS project 2026-27 fall
 # Optimizing Vector Database Indexing Strategies for Low-Latency Retrieval-Augmented Generation (RAG)
 
 ## Objective

@@ -1,2 +1,27 @@
 # DBS-Project
 DBS project 2026-27 fall
+# Optimizing Vector Database Indexing Strategies for Low-Latency Retrieval-Augmented Generation (RAG)
+
+## Objective
+
+This project investigates different vector database indexing strategies to improve retrieval speed in Retrieval-Augmented Generation (RAG) systems.
+
+## Indexing Strategies
+
+- Flat / Brute Force
+- HNSW
+- IVF
+
+## Evaluation Metrics
+
+- Retrieval latency
+- Recall@K
+- Indexing time
+- Memory usage
+
+## Project Structure
+
+```text
+data/       - Sample documents and datasets
+src/        - Implementation code
+results/    - Benchmark results

@@ -1,0 +1,17 @@
+Retrieval-Augmented Generation combines information retrieval with language generation. A RAG system retrieves relevant information from a knowledge base and provides it to a language model as context.
+
+Vector databases are used in RAG systems to store numerical representations of documents called embeddings. These embeddings allow semantic similarity searches to identify relevant information.
+
+The choice of vector database indexing strategy has a significant effect on retrieval performance. Exact nearest neighbor search provides accurate results but can become computationally expensive as the number of vectors increases.
+
+Approximate nearest neighbor algorithms reduce retrieval time by searching only a portion of the vector space. HNSW and IVF are two commonly used indexing strategies for approximate vector search.
+
+HNSW uses a hierarchical graph structure to efficiently navigate through vectors during similarity search. Parameters such as the number of connections and search depth can affect its performance.
+
+IVF divides the vector space into clusters and searches only selected clusters during retrieval. This can reduce the number of distance calculations required.
+
+The objective of this project is to compare vector database indexing strategies for low-latency RAG retrieval. The evaluation will consider retrieval latency, recall, indexing time, and memory usage.
+
+Low-latency retrieval is important for RAG applications because users expect responses quickly. An efficient indexing strategy can significantly reduce the time required to retrieve relevant context before generation.
+
+Different indexing strategies provide different trade-offs between retrieval accuracy and speed. Therefore, benchmarking is required to determine which strategy is most suitable for a given RAG workload.

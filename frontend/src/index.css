@@ -1,0 +1,341 @@
+:root {
+  --ink-bg: #14181f;
+  --ink-surface: #1b212b;
+  --ink-line: #2b3340;
+  --paper: #f0ead6;
+  --paper-dark: #e2d9bd;
+  --text: #e8e4da;
+  --text-dim: #93a0b3;
+  --gold: #c9a227;
+  --gold-soft: rgba(201, 162, 39, 0.16);
+  --error: #c8654a;
+
+  --font-display: 'Source Serif 4', Georgia, serif;
+  --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ink-bg);
+  background-image: radial-gradient(circle at 15% 0%, rgba(201, 162, 39, 0.06), transparent 45%);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 24px 4px 18px;
+  border-bottom: 1px solid var(--ink-line);
+  flex-wrap: wrap;
+}
+
+.wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.wordmark-glyph {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--gold);
+}
+
+.wordmark-text {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.header-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  flex: 1;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6fae7c;
+  box-shadow: 0 0 6px rgba(111, 174, 124, 0.7);
+}
+
+.status-error .status-dot {
+  background: var(--error);
+  box-shadow: 0 0 6px rgba(200, 101, 74, 0.7);
+}
+
+.status-error {
+  color: var(--error);
+}
+
+/* Thread */
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 4px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-line) transparent;
+}
+
+.empty-state {
+  margin: auto;
+  max-width: 420px;
+  text-align: center;
+  padding-bottom: 60px;
+}
+
+.empty-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.empty-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  width: 100%;
+}
+
+.row-user {
+  justify-content: flex-end;
+}
+
+.row-assistant {
+  justify-content: flex-start;
+}
+
+.note {
+  max-width: 78%;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.note p {
+  margin: 0;
+}
+
+/* User message: warm paper note */
+.note-user {
+  background: var(--paper);
+  color: #211d13;
+  padding: 12px 16px 8px;
+  border-radius: 3px;
+  transform: rotate(-0.3deg);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+.note-user .note-time {
+  display: block;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #6b6349;
+  margin-top: 4px;
+}
+
+/* Assistant message: marginalia annotation with gold rule */
+.note-assistant {
+  display: flex;
+  gap: 12px;
+}
+
+.note-rule {
+  flex-shrink: 0;
+  width: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+  opacity: 0.8;
+}
+
+.note-body {
+  padding: 2px 0;
+}
+
+.note-body p {
+  font-family: var(--font-body);
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.note-time {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+
+.note-error .note-rule {
+  background: var(--error);
+}
+
+.note-error .note-body p {
+  color: #e3b4a5;
+}
+
+/* Thinking indicator */
+.thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: pulse 1.1s infinite ease-in-out;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes pulse {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* Composer */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 16px 4px 22px;
+  border-top: 1px solid var(--ink-line);
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  background: var(--ink-surface);
+  border: 1px solid var(--ink-line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 11px 14px;
+  max-height: 160px;
+  transition: border-color 0.15s ease;
+}
+
+.composer textarea::placeholder {
+  color: var(--text-dim);
+}
+
+.composer textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+
+.composer button {
+  background: var(--gold);
+  color: #1c1608;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding: 11px 20px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.composer button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.composer button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.composer button:disabled {
+  background: var(--ink-line);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+/* Mobile */
+@media (max-width: 560px) {
+  .app {
+    padding: 0 14px;
+  }
+  .note {
+    max-width: 88%;
+  }
+  .header-sub {
+    display: none;
+  }
+}

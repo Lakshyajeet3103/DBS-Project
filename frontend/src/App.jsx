@@ -1,152 +1,134 @@
 import { useEffect, useRef, useState } from 'react'
+import Sidebar from './components/Sidebar'
+import MessageEntry from './components/MessageEntry'
+import { askDocket } from './api'
+import { ROLES } from './config'
 
-// Change this if your FastAPI backend runs somewhere other than localhost:8000
-const API_BASE = 'http://127.0.0.1:8000'
-
-function formatTime(date) {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
+let idCounter = 0
+const nextId = () => `e${++idCounter}`
 
 export default function App() {
-  const [messages, setMessages] = useState([])
+  const [role, setRole] = useState('analyst')
+  const [activeTypes, setActiveTypes] = useState([])
+  const [year, setYear] = useState('Any year')
   const [input, setInput] = useState('')
-  const [isThinking, setIsThinking] = useState(false)
-  const [connectionError, setConnectionError] = useState(false)
-  const scrollRef = useRef(null)
-  const textareaRef = useRef(null)
+  const [entries, setEntries] = useState([])
+  const [isBusy, setIsBusy] = useState(false)
+  const threadRef = useRef(null)
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, isThinking])
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
+  }, [entries])
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`
-    }
-  }, [input])
+  function toggleType(type) {
+    setActiveTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    )
+  }
 
-  async function sendMessage(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    const text = input.trim()
-    if (!text || isThinking) return
+    const message = input.trim()
+    if (!message || isBusy) return
 
-    const userMessage = { role: 'user', text, time: new Date() }
-    setMessages((prev) => [...prev, userMessage])
+    const userEntry = { id: nextId(), role: 'user', text: message }
+    const pendingEntry = { id: nextId(), role: 'assistant', status: 'pending' }
+    setEntries((prev) => [...prev, userEntry, pendingEntry])
     setInput('')
-    setIsThinking(true)
-    setConnectionError(false)
+    setIsBusy(true)
+
+    const filters = {
+      document_type: activeTypes.length ? activeTypes : undefined,
+      effective_year: year === 'Any year' ? undefined : Number(year),
+    }
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
-      })
-
-      if (!res.ok) throw new Error(`Server responded ${res.status}`)
-
-      const data = await res.json()
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', text: data.reply, time: new Date() },
-      ])
+      const result = await askDocket({ message, role, filters })
+      setEntries((prev) =>
+        prev.map((entry) =>
+          entry.id === pendingEntry.id
+            ? {
+                ...entry,
+                status: 'done',
+                text: result.reply,
+                citations: result.citations,
+                denied: result.denied,
+              }
+            : entry
+        )
+      )
     } catch (err) {
-      setConnectionError(true)
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          text: "Couldn't reach the backend. Make sure it's running — uvicorn main:app --reload — at " + API_BASE + '.',
-          time: new Date(),
-          isError: true,
-        },
-      ])
+      setEntries((prev) =>
+        prev.map((entry) =>
+          entry.id === pendingEntry.id
+            ? {
+                ...entry,
+                status: 'error',
+                text: `Couldn't reach the backend — ${err.message}`,
+              }
+            : entry
+        )
+      )
     } finally {
-      setIsThinking(false)
+      setIsBusy(false)
     }
   }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage(e)
-    }
-  }
+  const activeRole = ROLES.find((r) => r.id === role)
 
   return (
     <div className="app">
-      <header className="app-header">
-        <div className="wordmark">
-          <span className="wordmark-glyph">§</span>
-          <span className="wordmark-text">Marginalia</span>
-        </div>
-        <span className="header-sub">study assistant · grounded in your documents</span>
-        <span className={`status ${connectionError ? 'status-error' : ''}`}>
-          <span className="status-dot" />
-          {connectionError ? 'backend unreachable' : 'ready'}
-        </span>
-      </header>
+      <Sidebar
+        role={role}
+        onRoleChange={setRole}
+        activeTypes={activeTypes}
+        onToggleType={toggleType}
+        year={year}
+        onYearChange={setYear}
+      />
 
-      <main className="thread" ref={scrollRef}>
-        {messages.length === 0 && (
-          <div className="empty-state">
-            <p className="empty-title">Ask something about your documents.</p>
-            <p className="empty-body">
-              Answers are drawn only from what's been indexed — nothing is guessed.
-              If it isn't in your documents, you'll be told so plainly.
-            </p>
-          </div>
-        )}
+      <div className="main">
+        <header className="main-header">
+          <h1>Compliance Query</h1>
+          <span className="session-meta">
+            role: {activeRole?.name} · clearance {activeRole?.badge}
+          </span>
+        </header>
 
-        {messages.map((m, i) => (
-          <div key={i} className={`row row-${m.role}`}>
-            {m.role === 'assistant' ? (
-              <div className={`note note-assistant ${m.isError ? 'note-error' : ''}`}>
-                <span className="note-rule" />
-                <div className="note-body">
-                  <p>{m.text}</p>
-                  <span className="note-time">{formatTime(m.time)}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="note note-user">
-                <p>{m.text}</p>
-                <span className="note-time">{formatTime(m.time)}</span>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {isThinking && (
-          <div className="row row-assistant">
-            <div className="note note-assistant note-thinking">
-              <span className="note-rule" />
-              <div className="note-body">
-                <span className="thinking-dots">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              </div>
+        <div className="thread" ref={threadRef}>
+          {entries.length === 0 && (
+            <div className="empty-state">
+              <h2>No entries yet</h2>
+              <p>
+                Ask about a policy, clause, or vendor contract. Answers cite the
+                exact section they came from — or say plainly when a policy
+                doesn't cover it.
+              </p>
             </div>
-          </div>
-        )}
-      </main>
+          )}
+          {entries.map((entry) => (
+            <MessageEntry key={entry.id} entry={entry} />
+          ))}
+        </div>
 
-      <form className="composer" onSubmit={sendMessage}>
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask a question about your documents…"
-          rows={1}
-        />
-        <button type="submit" disabled={!input.trim() || isThinking}>
-          Ask
-        </button>
-      </form>
+        <div className="composer">
+          <form className="composer-form" onSubmit={handleSubmit}>
+            <input
+              className="composer-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask about PTO, a vendor SLA, a comp clause…"
+              disabled={isBusy}
+            />
+            <button className="send-btn" type="submit" disabled={isBusy || !input.trim()}>
+              {isBusy ? 'Retrieving…' : 'Ask'}
+            </button>
+          </form>
+          <div className="composer-hint">
+            Grounded strictly in retrieved chunks — no answer without a citation.
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

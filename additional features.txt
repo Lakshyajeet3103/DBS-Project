@@ -1,1 +1,7 @@
-
+backend working for enterprise level rag document access segregation 
+login page for different level of users.
+make a sql storage(optional)
+segregation based on : year, doc type, 
+slm model or llm model, embedding model(optional),
+instead of only pdf ; text, and images(optional),md and others as well
+ocr for images(optional)

@@ -1,6 +1,6 @@
 # Folio & DBS-Project: 4-Person Team Task Division & Execution Guide
 
-This document divides the complete implementation of the **Folio Access-Controlled RAG Knowledge Engine** and the **FAISS Vector Indexing Research Track** among four developers. It directly references the architecture and phases in [`STEP_BY_STEP_IMPLEMENTATION.md`](file:///home/surya/programming/projects/DBS-Project/STEP_BY_STEP_IMPLEMENTATION.md), [`README.md`](file:///home/surya/programming/projects/DBS-Project/README.md), and [`frontend/API_CONTRACT.md`](file:///home/surya/programming/projects/DBS-Project/frontend/API_CONTRACT.md).
+This document divides the complete implementation of the **Folio Access-Controlled RAG Knowledge Engine** and the **FAISS Vector Indexing Research Track** among four developers. It directly references the architecture and phases in [`STEP_BY_STEP_IMPLEMENTATION.md`](./STEP_BY_STEP_IMPLEMENTATION.md), [`README.md`](./README.md), and [`frontend/API_CONTRACT.md`](./frontend/API_CONTRACT.md).
 
 ---
 
@@ -44,19 +44,19 @@ flowchart TD
 - **Primary Focus**: Infrastructure setup, SQL database persistence (SQLite via SQLAlchemy), password security, session token issuance, HttpOnly cookie lifecycle, and `/api/auth/*` endpoints.
 - **Reference**: `STEP_BY_STEP_IMPLEMENTATION.md` → **Phase 1** & **Phase 2**.
 - **Assigned Files**:
-  - [`requirements.txt`](file:///home/surya/programming/projects/DBS-Project/requirements.txt)
+  - [`requirements.txt`](./requirements.txt)
   - `.env` & `.env.example`
   - `database/connection.py`
   - `database/models.py`
   - `database/seed.py`
   - `core/auth.py`
   - `core/dependencies.py`
-  - Relevant auth routes in [`main.py`](file:///home/surya/programming/projects/DBS-Project/main.py)
+  - Relevant auth routes in [`main.py`](./main.py)
 
 ### 2. Detailed Step-by-Step Instructions
 
 #### Task 1.1: Harmonize Dependencies & Environment Configuration
-- Update [`requirements.txt`](file:///home/surya/programming/projects/DBS-Project/requirements.txt) with the full dependency manifest specified in Phase 1 of `STEP_BY_STEP_IMPLEMENTATION.md`.
+- Update [`requirements.txt`](./requirements.txt) with the full dependency manifest specified in Phase 1 of `STEP_BY_STEP_IMPLEMENTATION.md`.
 - Create `.env.example` and set up the active `.env` file with `DATABASE_URL=sqlite:///./data/folio.db`, `SECRET_KEY`, and `ENVIRONMENT=development`.
 - Verify clean virtual environment setup:
   ```bash
@@ -70,9 +70,9 @@ flowchart TD
   - Define SQLite connection engine with `check_same_thread=False` and `SessionLocal` factory.
   - Implement the `get_db()` generator dependency.
 - Create `database/models.py` defining SQLAlchemy models:
-  - [`User`](file:///home/surya/programming/projects/DBS-Project/STEP_BY_STEP_IMPLEMENTATION.md#step-22-define-database-models-databasemodelspy): `id` (string), `name`, `email` (unique index), `password_hash`, `role` (`"junior"` or `"senior"`), `created_at`.
-  - [`Session`](file:///home/surya/programming/projects/DBS-Project/STEP_BY_STEP_IMPLEMENTATION.md#step-22-define-database-models-databasemodelspy): `id` (token, string, primary key), `user_id` (foreign key), `created_at`, `expires_at`.
-  - [`Document`](file:///home/surya/programming/projects/DBS-Project/STEP_BY_STEP_IMPLEMENTATION.md#step-22-define-database-models-databasemodelspy): `id` (slug string e.g. `"team-handbook"`), `title`, `description`, `category`, `type`, `year`, `level` (`"junior"` or `"senior"`), `date`, `minutes`, `author`, `content`, `file_path`.
+  - [`User`](./STEP_BY_STEP_IMPLEMENTATION.md#step-22-define-database-models-databasemodelspy): `id` (string), `name`, `email` (unique index), `password_hash`, `role` (`"junior"` or `"senior"`), `created_at`.
+  - [`Session`](./STEP_BY_STEP_IMPLEMENTATION.md#step-22-define-database-models-databasemodelspy): `id` (token, string, primary key), `user_id` (foreign key), `created_at`, `expires_at`.
+  - [`Document`](./STEP_BY_STEP_IMPLEMENTATION.md#step-22-define-database-models-databasemodelspy): `id` (slug string e.g. `"team-handbook"`), `title`, `description`, `category`, `type`, `year`, `level` (`"junior"` or `"senior"`), `date`, `minutes`, `author`, `content`, `file_path`.
 
 #### Task 1.3: Authentication Utilities & FastAPI Dependencies
 - Create `core/auth.py`:
@@ -95,8 +95,8 @@ flowchart TD
   - Seed initial 9 canonical documents (6 Junior, 3 Senior) from `frontend/src/data.js`.
 
 #### Task 1.5: Auth Endpoints in `main.py`
-- In [`main.py`](file:///home/surya/programming/projects/DBS-Project/main.py), configure CORS with explicit origins `['http://127.0.0.1:5173', 'http://localhost:5173']` and `allow_credentials=True`.
-- Implement endpoints adhering strictly to [`frontend/API_CONTRACT.md`](file:///home/surya/programming/projects/DBS-Project/frontend/API_CONTRACT.md):
+- In [`main.py`](./main.py), configure CORS with explicit origins `['http://127.0.0.1:5173', 'http://localhost:5173']` and `allow_credentials=True`.
+- Implement endpoints adhering strictly to [`frontend/API_CONTRACT.md`](./frontend/API_CONTRACT.md):
   - `POST /api/auth/login`: Accepts `{"email": "...", "password": "..."}`. Returns 401 on bad credentials. Sets `folio_session` HttpOnly cookie (`httponly=True, samesite="lax", secure=False, path="/"`) and returns `{id, name, email, role}`.
   - `GET /api/auth/me`: Protected by `Depends(get_current_user)`. Returns `{id, name, email, role}`.
   - `POST /api/auth/logout`: Revokes session, calls `response.delete_cookie("folio_session", path="/")`, and returns status 204.
@@ -121,7 +121,7 @@ flowchart TD
 - **Primary Focus**: Document loaders (PDF, TXT, Markdown, Images via OCR), semantic text chunking, attaching rich metadata dictionaries to vector chunks, and populating ChromaDB storage at `./chroma`.
 - **Reference**: `STEP_BY_STEP_IMPLEMENTATION.md` → **Phase 3** & `additional features.txt` (items 4, 6, 7).
 - **Assigned Files**:
-  - [`ingest.py`](file:///home/surya/programming/projects/DBS-Project/ingest.py)
+  - [`ingest.py`](./ingest.py)
   - `services/ocr_service.py`
   - `data/documents/` (directory organization for sample files)
   - `./chroma` directory and collection schema
@@ -202,9 +202,9 @@ flowchart TD
 
 ### 1. Scope & Ownership
 - **Primary Focus**: Document retrieval endpoints (`/api/documents/*`), permission-aware RAG pipeline (`POST /api/chat`), LLM prompt construction, structured source citations, and end-to-end integration with the React frontend in live API mode.
-- **Reference**: `STEP_BY_STEP_IMPLEMENTATION.md` → **Phase 4** & **Phase 5**, [`frontend/API_CONTRACT.md`](file:///home/surya/programming/projects/DBS-Project/frontend/API_CONTRACT.md).
+- **Reference**: `STEP_BY_STEP_IMPLEMENTATION.md` → **Phase 4** & **Phase 5**, [`frontend/API_CONTRACT.md`](./frontend/API_CONTRACT.md).
 - **Assigned Files**:
-  - [`main.py`](file:///home/surya/programming/projects/DBS-Project/main.py)
+  - [`main.py`](./main.py)
   - `services/rag_service.py`
   - `frontend/.env.local`
   - Integration testing with `frontend/src/api.js`
@@ -212,12 +212,12 @@ flowchart TD
 ### 2. Detailed Step-by-Step Instructions
 
 #### Task 3.1: Document Management API Endpoints
-In [`main.py`](file:///home/surya/programming/projects/DBS-Project/main.py), implement document routes:
+In [`main.py`](./main.py), implement document routes:
 - `GET /api/documents`:
   - Inject `current_user: User = Depends(get_current_user)`.
   - If `current_user.role == "junior"`: query documents where `level == 'junior'`.
   - If `current_user.role == "senior"`: query documents where `level.in_(['junior', 'senior'])`.
-  - Return JSON array matching [`API_CONTRACT.md`](file:///home/surya/programming/projects/DBS-Project/frontend/API_CONTRACT.md#documents).
+  - Return JSON array matching [`API_CONTRACT.md`](./frontend/API_CONTRACT.md#documents).
 - `GET /api/documents/{id}`:
   - Inject `current_user: User = Depends(get_current_user)`.
   - Fetch document by `id`. Return 404 if not found.
@@ -312,11 +312,11 @@ In [`main.py`](file:///home/surya/programming/projects/DBS-Project/main.py), imp
 
 ### 1. Scope & Ownership
 - **Primary Focus**: Complete the FAISS vector indexing research suite in `src/benchmark.py` (Flat vs. HNSW vs. IVF), populate `results/benchmark_results.csv`, and write automated security/acceptance tests for the backend API.
-- **Reference**: `STEP_BY_STEP_IMPLEMENTATION.md` → **Phase 6** & **Phase 7**, [`README.md`](file:///home/surya/programming/projects/DBS-Project/README.md) lines 163–175 & 316–325.
+- **Reference**: `STEP_BY_STEP_IMPLEMENTATION.md` → **Phase 6** & **Phase 7**, [`README.md`](./README.md) lines 163–175 & 316–325.
 - **Assigned Files**:
-  - [`src/benchmark.py`](file:///home/surya/programming/projects/DBS-Project/src/benchmark.py) (implement from 0 bytes)
-  - [`src/chunking.py`](file:///home/surya/programming/projects/DBS-Project/src/chunking.py), [`src/embeddings.py`](file:///home/surya/programming/projects/DBS-Project/src/embeddings.py), [`src/vector_index.py`](file:///home/surya/programming/projects/DBS-Project/src/vector_index.py)
-  - [`results/benchmark_results.csv`](file:///home/surya/programming/projects/DBS-Project/results/benchmark_results.csv)
+  - [`src/benchmark.py`](./src/benchmark.py) (implement from 0 bytes)
+  - [`src/chunking.py`](./src/chunking.py), [`src/embeddings.py`](./src/embeddings.py), [`src/vector_index.py`](./src/vector_index.py)
+  - [`results/benchmark_results.csv`](./results/benchmark_results.csv)
   - `tests/test_api_security.py` (automated security test suite)
 
 ### 2. Detailed Step-by-Step Instructions
@@ -331,7 +331,7 @@ In [`main.py`](file:///home/surya/programming/projects/DBS-Project/main.py), imp
        $$\text{Recall@}K = \frac{|\text{Retrieved Top-}K \cap \text{Ground Truth Top-}K|}{K}$$
      - **IVF Index** (`faiss.IndexIVFFlat`, $nlist=16, nprobe=4$): Train index, add vectors, measure build time, query latency, and Recall@K.
   4. **Memory Estimation**: Measure index memory footprint via `faiss.serialize_index(index).nbytes / (1024 * 1024)` MB.
-  5. **Output**: Write results to [`results/benchmark_results.csv`](file:///home/surya/programming/projects/DBS-Project/results/benchmark_results.csv) with columns:
+  5. **Output**: Write results to [`results/benchmark_results.csv`](./results/benchmark_results.csv) with columns:
      `Index,Corpus_Size,Indexing_Time_ms,Search_Latency_ms,P95_Latency_ms,Recall_at_K,Memory_MB`.
 
 #### Task 4.2: Benchmark CLI Runner & Findings Summary
@@ -342,7 +342,7 @@ In [`main.py`](file:///home/surya/programming/projects/DBS-Project/main.py), imp
 - Print a clear console summary table comparing trade-offs between Flat, HNSW, and IVF.
 
 #### Task 4.3: Automated Security & Acceptance Test Suite
-Create `tests/test_api_security.py` using `pytest` and `httpx.AsyncClient` to rigorously verify the 6 Acceptance Criteria from [`README.md`](file:///home/surya/programming/projects/DBS-Project/README.md):
+Create `tests/test_api_security.py` using `pytest` and `httpx.AsyncClient` to rigorously verify the 6 Acceptance Criteria from [`README.md`](./README.md):
 - **AC-1 (ID Guessing)**: Junior session calling `GET /api/documents/leadership-strategy` returns **403 Forbidden**.
 - **AC-2 (Search & Chat Isolation)**: Junior session calling `POST /api/chat` asking about 2027 leadership strategy returns "I cannot find this in your documents" and sources list contains 0 senior documents.
 - **AC-3 (Senior Inheritance)**: Senior session can retrieve all 9 documents and chat queries return both Junior and Senior information.

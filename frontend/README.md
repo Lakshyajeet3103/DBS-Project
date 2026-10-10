@@ -1,63 +1,52 @@
-# Docket — frontend
+# Folio — role-based knowledge workspace
 
-Vite + React chat UI for the DBS-Project RAG backend (`main.py`). Designed
-around the RBAC/citation/grounding requirements: a role switcher, document
-metadata filters, citation chips on every answer, and a distinct "redacted"
-state for anything outside the active role's clearance.
+A new React + Vite frontend for the document assistant. Junior users see Junior documents; Senior users see both collections. Includes login, overview, searchable/filterable library, document reader, text download, per-account bookmarks, assistant with sources, access information, and responsive navigation.
 
-## Run it
+## Run locally
 
-```bash
-cd frontend
+Requires Node.js 18+ and npm. From this folder:
+
+```sh
 npm install
-cp .env.example .env   # points at http://localhost:8000 by default
-npm run dev
+npm run dev -- --host 127.0.0.1
 ```
 
-This starts on `http://localhost:5173`, which matches the CORS origins
-already allowed in `main.py`. Run the FastAPI backend separately:
+Open http://127.0.0.1:5173. The default demo needs no Python server or API key.
 
-```bash
-uvicorn main:app --reload
+| Account | Password |
+| --- | --- |
+| junior@folio.demo | Junior@123 |
+| senior@folio.demo | Senior@123 |
+
+The login page has buttons to fill these credentials. Roles belong to accounts; users cannot select a role after sign-in. Demo authentication is simulated, not a security boundary. All bundled documents are fictional and inspectable in the JavaScript bundle. Never bundle real restricted documents.
+
+Demo chat quotes matching accessible sample passages; it does not call an LLM. Bookmarks persist per account in localStorage. The demo session is in sessionStorage until logout or tab closure. Chat lives in memory and clears on logout or a change of document scope.
+
+## Backend integration
+
+Copy `.env.example` to `.env.local`, set `VITE_DATA_MODE=api`, and set `VITE_API_BASE_URL`. Restart Vite after editing these values. See [API_CONTRACT.md](API_CONTRACT.md) for the exact endpoint and response contract.
+
+The existing backend supports `/api/chat` with `{message}` and `{reply}`. This adapter preserves that shape. **Authentication, document APIs, and server-side permissions are still missing in the backend.** Live mode requires those endpoints and never falls back to demo or unrestricted chat. The backend must filter authorized documents before sending context to the LLM. Backend source files have not been changed.
+
+## Verify
+
+```sh
+npm test
+npm run build
+npm run preview -- --host 127.0.0.1
 ```
 
-## What's wired up vs. what still needs backend work
+Tests cover Junior restrictions, Senior inheritance, deny-by-default access, combined filters, and authorized sample excerpts. Hash routes support direct links on static hosting. Build output is in `dist/` (ignored).
 
-The current `main.py` only accepts `{ "message": "..." }` on `POST
-/api/chat` and returns `{ "reply": "..." }`. This frontend already sends
-`role` and `filters` on every request (see `src/api.js`), and knows how to
-render `citations` and a `denied` flag if the backend returns them — but
-**today those fields are ignored server-side**, so a "Junior Analyst" can
-still technically retrieve anything the backend's retriever returns.
+## Source
 
-To make the RBAC/grounding claims true end-to-end, the backend needs:
+- `src/App.jsx`: screens, navigation, and session lifecycle
+- `src/api.js`: demo/live API adapter and error handling
+- `src/access.js`: role checks, filters, and sample retrieval
+- `src/data.js`: fictional preview data
+- `src/Icons.jsx`, `src/index.css`: visual design
+- `tests/access.test.js`: access and retrieval tests
 
-1. **Metadata on ingest** (`ingest.py`) — tag each chunk with the schema
-   from the spec (`document_title`, `document_type`, `section_id`,
-   `effective_year`, plus a `clearance` level: 1 = general policy,
-   2 = manager-level contracts, 3 = executive compensation).
-2. **A hard filter before vector search** — in `main.py`, build a Chroma
-   `where` clause from the request's `role` (mapped to a max `clearance`)
-   and `filters` (`document_type`, `effective_year`), and pass it to
-   `retriever` / `vector_db.similarity_search(..., filter=where)`. This is
-   what makes it a database-level control instead of a UI-level one.
-3. **Citations + refusal in the response** — update the prompt to require
-   `section_id` per claim and the exact refusal string, then parse/return
-   `{ reply, citations, denied }` instead of just `{ reply }`.
+Upload, role administration, and account creation are excluded until responsibilities are assigned. Fonts fall back to system fonts when offline.
 
-Until step 2 lands, treat the role switcher here as a **demo of the UX**,
-not an access control boundary — anyone hitting the API directly bypasses
-it. `src/config.js` has a comment flagging this same thing.
-
-## Structure
-
-```
-src/
-  api.js               fetch wrapper for POST /api/chat
-  config.js             roles, clearance levels, doc types, years
-  styles.css             design tokens + layout
-  App.jsx                 state, thread, composer
-  components/
-    Sidebar.jsx           role switcher + metadata filters
-    MessageEntry.jsx       chat bubble / citation card / redaction state
-```
+The `frontend/` directory is standalone and ready to copy into the frontend repository once its URL is supplied. Do not commit `.env.local`, `node_modules`, or `dist`.

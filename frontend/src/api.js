@@ -23,7 +23,9 @@ async function request(path, options = {}) {
       }
     });
     if (!response.ok) {
-      if (response.status === 401 && path !== '/api/auth/login') window.dispatchEvent(new Event('folio:session-expired'));
+      // Probe endpoints expect 401 when logged out; only force re-login for real session loss.
+      const authProbe = path === '/api/auth/login' || path === '/api/auth/me';
+      if (response.status === 401 && !authProbe) window.dispatchEvent(new Event('folio:session-expired'));
       const messages = {
         401: 'Your session has expired. Please sign in again.',
         403: 'You do not have permission to access this content.',

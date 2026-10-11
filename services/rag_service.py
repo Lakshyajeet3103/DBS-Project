@@ -24,7 +24,14 @@ DEFAULT_CHROMA_DIR = "./chroma"
 DEFAULT_COLLECTION_NAME = "folio_knowledge_base"
 LEGACY_COLLECTION_NAME = "langchain"
 DEFAULT_TOP_K = 3
-DEFAULT_LLM_MODEL = "gemini-1.5-flash"
+DEFAULT_LLM_MODEL = "gemini-flash-latest"
+DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-001"
+_COMPAT_CHROMA_COLLECTION_CONFIG = (
+    '{"hnsw_configuration": {"space": "l2", "ef_construction": 100, "ef_search": 10, '
+    '"num_threads": 12, "M": 16, "resize_factor": 1.2, "batch_size": 100, '
+    '"sync_threshold": 1000, "_type": "HNSWConfigurationInternal"}, '
+    '"_type": "CollectionConfigurationInternal"}'
+)
 
 NO_CONTEXT_REPLY = "I cannot find this in your documents."
 
@@ -314,6 +321,62 @@ def ingest_registry_documents(
     return len(payload["texts"])
 
 
+def _normalize_gemini_model_name(model_name: str) -> str:
+    """Ensure Gemini model ids use the `models/` prefix required by the Generative Language API."""
+    name = (model_name or "").strip()
+    if not name:
+        return name
+    if name.startswith("models/"):
+        return name
+    return f"models/{name}"
+
+
+def _repair_chroma_collection_configs(persist_directory: str) -> None:
+    """Repair empty/invalid Chroma collection configs that lack the required `_type` field.
+
+    Some Chroma builds persist `config_json_str='{}'`, which chromadb 0.5.x rejects with
+    `KeyError: '_type'` during `get_or_create_collection`. Rewrite those rows to a valid
+    default config so ingestion/retrieval can open the existing store.
+    """
+    sqlite_path = os.path.join(persist_directory, "chroma.sqlite3")
+    if not os.path.isfile(sqlite_path):
+        return
+
+    try:
+        from chromadb.api.configuration import CollectionConfigurationInternal
+
+        default_cfg = CollectionConfigurationInternal().to_json_str()
+    except Exception:
+        default_cfg = _COMPAT_CHROMA_COLLECTION_CONFIG
+
+    try:
+        conn = sqlite3.connect(sqlite_path)
+        try:
+            columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(collections)").fetchall()
+            }
+            if "config_json_str" not in columns:
+                return
+            rows = conn.execute("SELECT id, config_json_str FROM collections").fetchall()
+            updated = False
+            for collection_id, config_json_str in rows:
+                cfg = (config_json_str or "").strip()
+                if not cfg or cfg in ("{}", "null") or '"_type"' not in cfg:
+                    conn.execute(
+                        "UPDATE collections SET config_json_str = ? WHERE id = ?",
+                        (default_cfg, collection_id),
+                    )
+                    updated = True
+            if updated:
+                conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        # Leave the store untouched; Chroma will surface a clearer open error.
+        return
+
+
 def get_embedding_model():
     """Initialize the configured embedding model (Gemini by default, or local MiniLM)."""
     provider = os.getenv("EMBEDDING_PROVIDER", "gemini").strip().lower()
@@ -323,7 +386,9 @@ def get_embedding_model():
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY is not set in the environment.")
-        model_name = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+        model_name = _normalize_gemini_model_name(
+            os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
+        )
         return GoogleGenerativeAIEmbeddings(model=model_name, google_api_key=api_key)
     if provider == "local":
         from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -341,6 +406,7 @@ def get_vector_db(
     from langchain_chroma import Chroma
 
     directory = persist_directory or os.getenv("CHROMA_PERSIST_DIR", DEFAULT_CHROMA_DIR)
+    _repair_chroma_collection_configs(directory)
     collection = resolve_collection_name(persist_directory=directory, collection_name=collection_name)
     embeddings = embedding_function or get_embedding_model()
 
@@ -451,7 +517,9 @@ def get_chat_model(model_name: Optional[str] = None):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not set in the environment.")
-    resolved_model = model_name or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
+    resolved_model = _normalize_gemini_model_name(
+        model_name or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
+    )
     return ChatGoogleGenerativeAI(model=resolved_model, api_key=api_key, temperature=0.0)
 
 

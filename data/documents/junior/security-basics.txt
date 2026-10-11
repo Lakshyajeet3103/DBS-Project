@@ -1,0 +1,11 @@
+Good habits. Safer work.
+
+Protect your account
+Use a unique password and enable multi-factor authentication where available. Never share credentials or approve an unexpected sign-in request.
+
+Handling documents
+Only share documents with colleagues who have the required access. Do not copy restricted material into public tools. Report unexpected document access to the security team.
+
+Report an incident
+If you suspect a security incident, contact the security team immediately. Include what happened and when, but do not forward passwords or sensitive files.
+

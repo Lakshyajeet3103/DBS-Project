@@ -9,6 +9,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import secrets
 from pathlib import Path
 import platform
 import subprocess
@@ -19,8 +20,7 @@ import faiss
 import numpy as np
 import psutil
 
-from src.benchmark_data import make_workload
-from src.chunking import load_document, chunk_text
+from src.sample_documents import load_sample_workload
 from src.embeddings import generate_embeddings, MODEL_NAME
 from src.vector_index import create_flat_index, create_hnsw_index, create_ivf_index
 
@@ -95,6 +95,11 @@ def load_embeddings(corpus, queries, cache, *, refresh=False):
 
 
 def run_benchmarks(args):
+    if args.seed is None:
+        args.seed = secrets.randbits(32)
+    if not 0 <= args.seed <= 2**32 - 1:
+        raise ValueError('seed must be in the range 0..4294967295')
+    print(f'Run seed: {args.seed} (reproduce with --seed {args.seed})', flush=True)
     if args.queries_count < 100:
         raise ValueError('At least 100 queries are required')
     if args.threads < 1 or args.repeats < 1:
@@ -104,20 +109,20 @@ def run_benchmarks(args):
     import torch
     torch.manual_seed(args.seed)
     torch.set_num_threads(args.threads)
-    sample_chunks = []
+    sample_manifest, available_chunks = [], None
     if bool(args.corpus) != bool(args.queries):
         raise ValueError('--corpus and --queries must be supplied together')
     if args.corpus:
         corpus, queries = load_jsonl(args.corpus), load_jsonl(args.queries)
         method = 'External JSONL text; provenance must be supplied by dataset owner'
     else:
-        sample_chunks = chunk_text(load_document(ROOT / 'data/sample_documents.txt'))
-        corpus, queries = make_workload(10000, args.queries_count, args.seed)
-        # Preserve the assignment sample as part of the measured corpus.
-        corpus = sample_chunks + corpus
-        method = ('Sample chunks plus unique fictional template combinations; no vector replication '
-                  'or perturbation. Queries are separately worded from the same template distribution. '
-                  'Not representative of production traffic or a human-labelled relevance benchmark.')
+        corpus, queries, sample_manifest, available_chunks = load_sample_workload(
+            max(args.sizes), args.queries_count, args.seed)
+        method = ('Saved TXT/Markdown sample documents: original sample, Person 2 files, and '
+                  '20 materialized fictional scenario documents. Paragraph-aware character chunking '
+                  '(500 characters, 50 overlap), deduplicated text, seeded shuffle/subsample. '
+                  'No runtime synthesis or vector replication. Query prompts read from saved JSONL. '
+                  'Synthetic scenario distribution, not production or human-labelled relevance data.')
     corpus = corpus[:max(args.sizes)]
     queries = queries[:args.queries_count]
     if any(not isinstance(text, str) or not text.strip() for text in corpus + queries):
@@ -144,9 +149,10 @@ def run_benchmarks(args):
                     faiss_threads=args.threads, embedding_device='cpu',
                     dataset_method=method, corpus_sha256=corpus_hash, queries_sha256=query_hash,
                     embedding_sha256=embedding_digest(vectors, query_vectors),
-                    sample_chunk_count=len(sample_chunks), query_count=len(queries), repeats=args.repeats,
+                    input_files=sample_manifest, available_unique_chunks=available_chunks,
+                    query_count=len(queries), repeats=args.repeats,
                     sizes=args.sizes, k=5, hnsw={'M':32, 'efConstruction':40, 'efSearch':16},
-                    ivf={'nlist':16, 'nprobe':4, 'training':'indexed corpus only; FAISS may subsample to 256*nlist vectors', 'seed':1234},
+                    ivf={'nlist':16, 'nprobe':4, 'training':'indexed corpus only; FAISS may subsample to 256*nlist vectors', 'seed':args.seed & 0x7fffffff},
                     timing='perf_counter_ns, serial single-query search, 10 warmups, no embedding/LLM/network time',
                     memory='serialized bytes / 2**20 (MiB), not process RAM',
                     limitations=['Synthetic template distribution; near-duplicates possible',
@@ -160,7 +166,7 @@ def run_benchmarks(args):
         metadata['git_commit'] = None
     metadata['source_sha256'] = {
         name: hashlib.sha256((ROOT/name).read_text(encoding='utf-8').encode('utf-8')).hexdigest()
-        for name in ('src/benchmark.py', 'src/benchmark_data.py', 'src/embeddings.py',
+        for name in ('src/benchmark.py', 'src/sample_documents.py', 'src/create_benchmark_samples.py', 'src/benchmark_data.py', 'src/embeddings.py',
                      'src/chunking.py', 'src/vector_index.py', 'requirements-benchmark.txt',
                      'results/requirements-benchmark.lock.txt')}
     rows, raw, trials = [], [], []
@@ -172,7 +178,7 @@ def run_benchmarks(args):
         metadata['ground_truth_boundary_ties'][str(n)] = int(np.sum(exact_scores[:,4] == exact_scores[:,5]))
         for label, builder in [('Flat', create_flat_index),
                                ('HNSW', lambda v: create_hnsw_index(v, M=32, ef_construction=40, ef_search=16)),
-                               ('IVF', lambda v: create_ivf_index(v, nlist=16, nprobe=4, seed=1234))]:
+                               ('IVF', lambda v: create_ivf_index(v, nlist=16, nprobe=4, seed=args.seed & 0x7fffffff))]:
             builds, elapsed, recalls, memory = [], [], [], []
             for repeat in range(args.repeats):
                 start = time.perf_counter_ns()
@@ -207,6 +213,12 @@ def run_benchmarks(args):
             writer.writeheader()
             writer.writerows(values)
     (args.output/'benchmark_metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+    print('\n| Index | N | Build ms | Mean ms | P95 ms | P99 ms | Recall@5 | MiB |')
+    print('|---|---:|---:|---:|---:|---:|---:|---:|')
+    for row in rows:
+        print(f'| {row["Index"]} | {row["Corpus_Size"]} | {row["Indexing_Time_ms"]:.3f} | '
+              f'{row["Search_Latency_ms"]:.4f} | {row["P95_Latency_ms"]:.4f} | '
+              f'{row["P99_Latency_ms"]:.4f} | {row["Recall_at_K"]:.4f} | {row["Memory_MB"]:.3f} |')
     print(f'{"External JSONL" if args.corpus else "Synthetic"} workload. Timings exclude embedding '
           'and generation. See benchmark_metadata.json.', flush=True)
     return rows
@@ -216,7 +228,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sizes', nargs='+', type=int, default=[500,2000,10000])
     parser.add_argument('--queries-count', type=int, default=120)
-    parser.add_argument('--seed', type=int, default=20261010)
+    parser.add_argument('--seed', type=int, default=None, help='Replay a recorded seed; omitted = fresh random 32-bit seed')
     parser.add_argument('--threads', type=int, default=1)
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--corpus', type=Path)

@@ -36,7 +36,7 @@ ACTIONS = ['Collect written approval before proceeding.', 'Run a small pilot bef
            'Notify the responsible owner after verification.']
 
 
-def make_workload(size=10000, query_count=120, seed=20261010):
+def make_workload(size=10000, query_count=120, seed=None):
     """10,000 distinct template combinations, not replicated/noised vectors.
 
     Queries are separately worded but share the template distribution. This is a

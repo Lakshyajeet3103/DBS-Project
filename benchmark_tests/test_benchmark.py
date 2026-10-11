@@ -13,11 +13,23 @@ def test_recall_ignores_order_and_missing_neighbours():
 
 
 def test_workload_is_unique_reproducible_and_queries_are_disjoint():
-    a, q = make_workload()
+    a, q = make_workload(seed=17)
     assert len(a) == len(set(a)) == 10000
     assert len(q) == len(set(q)) == 120
     assert not set(a) & set(q)
-    assert (a, q) == make_workload()
+    assert (a, q) == make_workload(seed=17)
+
+
+def test_saved_documents_replay_and_seed_changes_selection():
+    from src.sample_documents import load_sample_workload
+    a, q, manifest, count = load_sample_workload(10000, 120, 1)
+    assert len(a) == len(set(a)) == 10000
+    assert len(q) == len(set(q)) == 120
+    assert not set(a) & set(q)
+    assert count >= 10000
+    assert any(item['path'] == 'data/documents/senior/leadership-strategy.md' for item in manifest)
+    assert (a, q, manifest, count) == load_sample_workload(10000, 120, 1)
+    assert (a, q) != load_sample_workload(10000, 120, 2)[:2]
 
 
 def test_index_builders_use_cosine_equivalent_inner_product():
@@ -126,7 +138,7 @@ def test_runner_outputs_match_raw_measurements(tmp_path, monkeypatch):
                         original_loader(corpus, queries, tmp_path/'cache', **kwargs))
     output = tmp_path/'results'
     benchmark.run_benchmarks(argparse.Namespace(
-        sizes=[640], queries_count=100, seed=19, threads=1, repeats=2,
+        sizes=[640], queries_count=100, seed=None, threads=1, repeats=2,
         corpus=corpus_path, queries=queries_path, output=output, refresh_cache=False))
     with (output/'benchmark_results.csv').open() as handle:
         rows = list(csv.DictReader(handle))
@@ -145,6 +157,7 @@ def test_runner_outputs_match_raw_measurements(tmp_path, monkeypatch):
             assert float(row[field]) == pytest.approx(np.mean(values))
     assert float(rows[0]['Recall_at_K']) == 1
     metadata = json.loads((output/'benchmark_metadata.json').read_text())
-    assert metadata['sample_chunk_count'] == 0
+    assert metadata['input_files'] == []
     assert metadata['embedding_device'] == 'cpu'
+    assert isinstance(metadata['seed'], int) and 0 <= metadata['seed'] <= 2**32 - 1
     assert metadata['model_cache_provenance']['provenance']['revision'] == benchmark.MODEL_REVISION

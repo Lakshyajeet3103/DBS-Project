@@ -182,3 +182,62 @@ def test_chat_ignores_spoofed_role_in_request_body_and_headers(monkeypatch):
     assert res.status_code == 200
     assert fake_db.last_filter == {"level": "junior"}
     assert res.json()["sources"] == []
+
+
+def test_chat_sql_registry_verification_blocks_mistagged_reclassified_and_unregistered_chunks(monkeypatch):
+    """Verify POST /api/chat checks the live SQL document registry before building prompts or citations."""
+    from database.connection import SessionLocal
+    from database.models import Document
+
+    adversarial_corpus = [
+        # 1. Senior document incorrectly tagged 'junior' in vector metadata
+        FakeChunk(
+            page_content="SECRET_MISTAGGED_SENIOR_STRATEGY",
+            metadata={"document_id": "leadership-strategy", "title": "Leadership strategy", "level": "junior"},
+        ),
+        # 2. Chunk with missing document_id
+        FakeChunk(
+            page_content="SECRET_MISSING_DOC_ID",
+            metadata={"title": "No ID", "level": "junior"},
+        ),
+        # 3. Chunk with nonexistent document_id
+        FakeChunk(
+            page_content="SECRET_NONEXISTENT_DOC_ID",
+            metadata={"document_id": "deleted-or-fake-id", "title": "Fake ID", "level": "junior"},
+        ),
+        # 4. Document ('brand-guide') that will be reclassified to 'senior' in SQL
+        FakeChunk(
+            page_content="SECRET_RECLASSIFIED_BRAND_GUIDE",
+            metadata={"document_id": "brand-guide", "title": "Brand guide", "level": "junior"},
+        ),
+    ]
+
+    fake_db = FilteredFakeVectorDB(adversarial_corpus)
+    seen_prompts: List[str] = []
+
+    def spy_llm(prompt: str) -> FakeAIMessage:
+        seen_prompts.append(prompt)
+        return FakeAIMessage(content="Leaked answer!")
+
+    monkeypatch.setattr(rag_service, "get_vector_db", lambda: fake_db)
+    monkeypatch.setattr(rag_service, "get_chat_model", lambda: spy_llm)
+
+    db = SessionLocal()
+    try:
+        brand_doc = db.query(Document).filter(Document.id == "brand-guide").first()
+        assert brand_doc is not None
+        brand_doc.level = "senior"
+        db.commit()
+
+        client = junior_client()
+        res = client.post("/api/chat", json={"message": "Tell me everything"})
+        assert res.status_code == 200
+        assert res.json() == {"reply": NO_CONTEXT_REPLY, "sources": []}
+        assert seen_prompts == []
+    finally:
+        brand_doc = db.query(Document).filter(Document.id == "brand-guide").first()
+        if brand_doc is not None:
+            brand_doc.level = "junior"
+            db.commit()
+        db.close()
+

@@ -272,3 +272,197 @@ def test_query_rag_clears_sources_when_llm_refuses():
 
     assert result == {"reply": NO_CONTEXT_REPLY, "sources": []}
 
+
+def test_senior_doc_mistagged_as_junior_in_vector_is_blocked_by_sql_registry():
+    """Review Issue 1a: A Senior document incorrectly tagged 'junior' in vector metadata must never reach the model."""
+    mistagged_senior_chunk = FakeChunk(
+        page_content="Confidential 2027 leadership roadmap.",
+        metadata={
+            "document_id": "leadership-strategy",  # Senior in SQL registry!
+            "title": "The road ahead: 2027 strategy",
+            "level": "junior",  # Incorrectly tagged Junior in vector store
+        },
+    )
+    spy_db = SpyVectorDB([mistagged_senior_chunk])
+    spy_llm = SpyLLM("Should never be invoked")
+
+    result = query_rag(
+        query="What is the 2027 roadmap?",
+        user_role="junior",
+        vector_db=spy_db,
+        llm=spy_llm,
+    )
+
+    assert result == {"reply": NO_CONTEXT_REPLY, "sources": []}
+    assert spy_llm.prompts == []
+
+
+def test_reclassified_document_in_sql_blocks_stale_junior_vector_metadata():
+    """Review Issue 1b: A document reclassified to Senior in SQL remains inaccessible despite stale Junior vector metadata."""
+    from database.connection import SessionLocal
+    from database.models import Document
+
+    stale_vector_chunk = FakeChunk(
+        page_content="Handbook working hours policy.",
+        metadata={
+            "document_id": "team-handbook",
+            "title": "The team handbook",
+            "level": "junior",  # Stale vector metadata from before reclassification
+        },
+    )
+    spy_db = SpyVectorDB([stale_vector_chunk])
+    spy_llm = SpyLLM("Should never be invoked after reclassification")
+
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == "team-handbook").first()
+        assert doc is not None
+        doc.level = "senior"
+        db.commit()
+
+        result = query_rag(
+            query="What are the working hours?",
+            user_role="junior",
+            vector_db=spy_db,
+            llm=spy_llm,
+            db=db,
+        )
+        assert result == {"reply": NO_CONTEXT_REPLY, "sources": []}
+        assert spy_llm.prompts == []
+    finally:
+        doc = db.query(Document).filter(Document.id == "team-handbook").first()
+        if doc is not None:
+            doc.level = "junior"
+            db.commit()
+        db.close()
+
+
+def test_missing_or_nonexistent_document_ids_blocked_from_prompt_and_sources():
+    """Review Issue 1c: Chunks with missing or nonexistent document IDs cannot enter the prompt or citations."""
+    bad_chunks = [
+        FakeChunk(
+            page_content="Orphan chunk with no document_id",
+            metadata={"title": "Orphan", "level": "junior"},
+        ),
+        FakeChunk(
+            page_content="Blank document_id chunk",
+            metadata={"document_id": "   ", "title": "Blank", "level": "junior"},
+        ),
+        FakeChunk(
+            page_content="Deleted or nonexistent registry document",
+            metadata={"document_id": "nonexistent-doc-999", "title": "Ghost Doc", "level": "junior"},
+        ),
+    ]
+    spy_db = SpyVectorDB(bad_chunks)
+    spy_llm = SpyLLM("Should never be invoked")
+
+    result = query_rag(
+        query="Tell me about orphan or ghost docs",
+        user_role="junior",
+        vector_db=spy_db,
+        llm=spy_llm,
+    )
+    assert result == {"reply": NO_CONTEXT_REPLY, "sources": []}
+    assert spy_llm.prompts == []
+
+    # Direct calls to build_prompt and extract_unique_sources also strip unregistered chunks
+    prompt = build_prompt("Any valid context?", bad_chunks, user_role="junior")
+    assert "Orphan chunk" not in prompt
+    assert "Deleted or nonexistent" not in prompt
+    assert extract_unique_sources(bad_chunks, user_role="junior") == []
+
+
+def test_fresh_metadata_tagged_ingestion_and_collection_alignment(tmp_path):
+    """Review Issue 2 & 3: Validate shared collection resolution, fresh tagged ingestion, and PDF path."""
+    import os
+    import sqlite3
+    import ingest
+    from services.rag_service import (
+        DEFAULT_COLLECTION_NAME,
+        LEGACY_COLLECTION_NAME,
+        build_registry_chunks,
+        ingest_registry_documents,
+        resolve_collection_name,
+    )
+
+    # 1. Ingestion and retrieval share the same collection configuration and sample PDF exists
+    assert ingest.DEFAULT_COLLECTION_NAME == DEFAULT_COLLECTION_NAME
+    assert os.path.isfile("data/sample_document.pdf")
+
+    # 2. Fresh metadata-tagged ingestion from the SQL registry produces valid chunks for all 9 documents
+    class InMemoryVectorStore:
+        def __init__(self):
+            self.items: List[FakeChunk] = []
+
+        def add_texts(self, texts, metadatas, ids):
+            for t, m, _id in zip(texts, metadatas, ids):
+                self.items.append(FakeChunk(page_content=t, metadata=m))
+
+        def similarity_search(self, query: str, k: int = 3, filter: Optional[Dict[str, Any]] = None):
+            def matches(meta, flt):
+                if not flt:
+                    return True
+                if "$and" in flt:
+                    return all(matches(meta, sub) for sub in flt["$and"])
+                for key, cond in flt.items():
+                    val = meta.get(key)
+                    if isinstance(cond, dict) and "$in" in cond:
+                        if val not in cond["$in"]:
+                            return False
+                    elif val != cond:
+                        return False
+                return True
+
+            pool = [c for c in self.items if matches(c.metadata, filter)]
+            q_words = set(query.lower().split())
+            pool.sort(key=lambda c: sum(1 for w in q_words if w in c.page_content.lower()), reverse=True)
+            return pool[:k]
+
+    store = InMemoryVectorStore()
+    count = ingest_registry_documents(vector_db=store)
+    assert count >= 9
+
+    payload = build_registry_chunks()
+    doc_ids = {m["document_id"] for m in payload["metadatas"]}
+    assert "team-handbook" in doc_ids
+    assert "leadership-strategy" in doc_ids
+    assert all(
+        {"document_id", "title", "level", "category", "type", "year", "chunk_index"} <= set(m.keys())
+        for m in payload["metadatas"]
+    )
+
+    # Junior retrieval against freshly ingested chunks never returns senior documents
+    jr_hits = retrieve_authorized_chunks("2027 strategy investment priorities", user_role="junior", k=5, vector_db=store)
+    assert len(jr_hits) > 0
+    assert all(h.metadata["level"] == "junior" for h in jr_hits)
+    assert all(h.metadata["document_id"] != "leadership-strategy" for h in jr_hits)
+
+    # Senior retrieval against freshly ingested chunks retrieves senior strategy document
+    sr_hits = retrieve_authorized_chunks("2027 strategy investment priorities", user_role="senior", k=5, vector_db=store)
+    assert any(h.metadata["document_id"] == "leadership-strategy" for h in sr_hits)
+
+    # 3. Collection resolution detects tagged collections across both folio_knowledge_base and langchain
+    db_file = tmp_path / "chroma.sqlite3"
+    conn = sqlite3.connect(str(db_file))
+    conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+    conn.execute("CREATE TABLE segments (id TEXT PRIMARY KEY, collection TEXT)")
+    conn.execute("CREATE TABLE embeddings (id INTEGER PRIMARY KEY, segment_id TEXT)")
+    conn.execute("CREATE TABLE embedding_metadata (id INTEGER, key TEXT, string_value TEXT)")
+    conn.execute("INSERT INTO collections VALUES ('c1', ?)", (LEGACY_COLLECTION_NAME,))
+    conn.execute("INSERT INTO segments VALUES ('s1', 'c1')")
+    conn.execute("INSERT INTO embeddings VALUES (1, 's1')")
+    conn.commit()
+    conn.close()
+
+    assert resolve_collection_name(persist_directory=str(tmp_path)) == LEGACY_COLLECTION_NAME
+
+    conn = sqlite3.connect(str(db_file))
+    conn.execute("INSERT INTO collections VALUES ('c2', ?)", (DEFAULT_COLLECTION_NAME,))
+    conn.execute("INSERT INTO segments VALUES ('s2', 'c2')")
+    conn.execute("INSERT INTO embeddings VALUES (2, 's2')")
+    conn.execute("INSERT INTO embedding_metadata VALUES (2, 'level', 'junior')")
+    conn.commit()
+    conn.close()
+
+    assert resolve_collection_name(persist_directory=str(tmp_path)) == DEFAULT_COLLECTION_NAME
+

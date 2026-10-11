@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 data/vector_store/
 node_modules/
+data/sample_document_2.pdf

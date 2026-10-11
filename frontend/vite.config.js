@@ -1,8 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Backend (main.py) only allows CORS from http://localhost:5173 and
-// http://127.0.0.1:5173 — keep this port fixed so the two stay in sync.
+// Pinned to 5173 to match the FastAPI backend's CORS allow_origins
 export default defineConfig({
   plugins: [react()],
   server: {

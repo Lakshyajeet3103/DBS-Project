@@ -3,9 +3,10 @@
 Implements Task 3.4:
 - Authenticates caller via `Depends(get_current_user)` (HttpOnly session cookie).
 - Validates optional `document_id` scope against the SQL document registry and caller's role.
-- Invokes `services.rag_service.query_rag` using the server-verified `user.role` (ignoring any
-  client-supplied role fields in headers or request body).
+- Invokes `services.rag_service.query_rag` using the server-verified `user.role` and active SQL
+  session `db` so every retrieved chunk is verified against the live SQL document registry.
 """
+import inspect
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -59,8 +60,16 @@ def chat_endpoint(
                 detail=FORBIDDEN_DOCUMENT_DETAIL,
             )
 
-    return rag_service.query_rag(
-        query=clean_message,
-        user_role=user.role,
-        document_id=scoped_doc_id,
-    )
+    kwargs = {
+        "query": clean_message,
+        "user_role": user.role,
+        "document_id": scoped_doc_id,
+    }
+    try:
+        sig = inspect.signature(rag_service.query_rag)
+        if "db" in sig.parameters:
+            kwargs["db"] = db
+    except (TypeError, ValueError):
+        pass
+
+    return rag_service.query_rag(**kwargs)

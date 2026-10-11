@@ -1,0 +1,11 @@
+# Standalone research environment, Python 3.11. Do not combine with requirements.txt.
+# Backend compatibility is tested separately; these pins reproduce the research run.
+faiss-cpu==1.15.1
+numpy==2.4.6
+sentence-transformers==6.1.0
+torch==2.14.1
+transformers==5.19.0
+tokenizers==0.23.3
+huggingface-hub==1.33.0
+psutil==7.2.2
+pytest==9.1.1

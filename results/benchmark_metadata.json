@@ -1,0 +1,91 @@
+{
+  "timestamp_utc": "2026-10-11T10:26:14.609218+00:00",
+  "seed": 20261010,
+  "python": "3.11.9",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "cpu": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+  "logical_cpus": 8,
+  "physical_cpus": 4,
+  "ram_bytes": 8303452160,
+  "versions": {
+    "faiss-cpu": "1.15.1",
+    "numpy": "2.4.6",
+    "sentence-transformers": "6.1.0",
+    "torch": "2.14.1",
+    "transformers": "5.19.0",
+    "psutil": "7.2.2"
+  },
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "model_cache_provenance": {
+    "provenance": {
+      "schema": 2,
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+      "device": "cpu",
+      "dimension": 384,
+      "normalize_embeddings": true,
+      "corpus_sha256": "c683b1b0f83fe77b77e884f921f3f2e79fdbe22305596348363872dd4eba81f5",
+      "queries_sha256": "30fdfd75c1becd13c96b72f80b0300942dddc449ac8f998fbee89d49cc3fb7c6",
+      "versions": {
+        "numpy": "2.4.6",
+        "sentence-transformers": "6.1.0",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "tokenizers": "0.23.3",
+        "huggingface-hub": "1.33.0"
+      }
+    },
+    "embedding_sha256": "2cc68f62a7f08d115b0ef1b81db6599c66c2a743380e25482c8f60046d2fa06c"
+  },
+  "dimension": 384,
+  "faiss_threads": 1,
+  "embedding_device": "cpu",
+  "dataset_method": "Sample chunks plus unique fictional template combinations; no vector replication or perturbation. Queries are separately worded from the same template distribution. Not representative of production traffic or a human-labelled relevance benchmark.",
+  "corpus_sha256": "c683b1b0f83fe77b77e884f921f3f2e79fdbe22305596348363872dd4eba81f5",
+  "queries_sha256": "30fdfd75c1becd13c96b72f80b0300942dddc449ac8f998fbee89d49cc3fb7c6",
+  "embedding_sha256": "2cc68f62a7f08d115b0ef1b81db6599c66c2a743380e25482c8f60046d2fa06c",
+  "sample_chunk_count": 8,
+  "query_count": 120,
+  "repeats": 3,
+  "sizes": [
+    500,
+    2000,
+    10000
+  ],
+  "k": 5,
+  "hnsw": {
+    "M": 32,
+    "efConstruction": 40,
+    "efSearch": 16
+  },
+  "ivf": {
+    "nlist": 16,
+    "nprobe": 4,
+    "training": "indexed corpus only; FAISS may subsample to 256*nlist vectors",
+    "seed": 1234
+  },
+  "timing": "perf_counter_ns, serial single-query search, 10 warmups, no embedding/LLM/network time",
+  "memory": "serialized bytes / 2**20 (MiB), not process RAM",
+  "limitations": [
+    "Synthetic template distribution; near-duplicates possible",
+    "Recall is neighbour agreement, not human relevance",
+    "P99 is based on a small query sample; inspect raw timings",
+    "500-vector IVF training is below FAISS recommended 39*nlist=624 samples",
+    "One machine; timings can vary with scheduling and thermal state"
+  ],
+  "git_commit": "e7a9e523c71ab7c63b2f91d85c36c56d1055703c",
+  "source_sha256": {
+    "src/benchmark.py": "1d3479d9f045b8959a61fdb467e19c4140a364c3acbc5f4223f7c547d1643c52",
+    "src/benchmark_data.py": "d3b25200da2d682d7f2127b50b459e041ed9a4418ab21549fe0a84ed395b453a",
+    "src/embeddings.py": "56753c7709c930ab954ba0e0c518fed6f8e2da379e09d045b37a1ea84b676fec",
+    "src/chunking.py": "761acfc8844e34097a14e6c7dfadb4a261f78e39d792638319ad410f8d2d5a1d",
+    "src/vector_index.py": "c26cbe72908d822764f157d9d8e567da58e45231babba98707a1eefd4cf62bf7",
+    "requirements-benchmark.txt": "9489be0d0eb695d909945910eb8ffaffc54850b405b3f062581919f6d4db3a6f",
+    "results/requirements-benchmark.lock.txt": "7bc3494165d92fd26f90a13a253504400466e177a848526852fe507e4e658138"
+  },
+  "ground_truth_boundary_ties": {
+    "500": 0,
+    "2000": 0,
+    "10000": 0
+  }
+}

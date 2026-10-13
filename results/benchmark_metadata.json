@@ -1,0 +1,219 @@
+{
+  "timestamp_utc": "2026-10-11T11:02:06.711464+00:00",
+  "seed": 4079965474,
+  "python": "3.11.9",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "cpu": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+  "logical_cpus": 8,
+  "physical_cpus": 4,
+  "ram_bytes": 8303452160,
+  "versions": {
+    "faiss-cpu": "1.15.1",
+    "numpy": "2.4.6",
+    "sentence-transformers": "6.1.0",
+    "torch": "2.14.1",
+    "transformers": "5.19.0",
+    "psutil": "7.2.2"
+  },
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "model_cache_provenance": {
+    "provenance": {
+      "schema": 2,
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+      "device": "cpu",
+      "dimension": 384,
+      "normalize_embeddings": true,
+      "corpus_sha256": "3567574112c38e62cefee7013e5b0fe4401f013da8241bd886ce11dfe92f698e",
+      "queries_sha256": "dc7173a8b7349d62720082c0327bad79c8fd19e7e4776b0054651e684db114f9",
+      "versions": {
+        "numpy": "2.4.6",
+        "sentence-transformers": "6.1.0",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "tokenizers": "0.23.3",
+        "huggingface-hub": "1.33.0"
+      }
+    },
+    "embedding_sha256": "1e514b180875809a3206d3c2ff6f2eeb2036060fc52337f304eb51bcd699a74e"
+  },
+  "dimension": 384,
+  "faiss_threads": 1,
+  "embedding_device": "cpu",
+  "dataset_method": "Saved TXT/Markdown sample documents: original sample, Person 2 files, and 20 materialized fictional scenario documents. Paragraph-aware character chunking (500 characters, 50 overlap), deduplicated text, seeded shuffle/subsample. No runtime synthesis or vector replication. Query prompts read from saved JSONL. Synthetic scenario distribution, not production or human-labelled relevance data.",
+  "corpus_sha256": "3567574112c38e62cefee7013e5b0fe4401f013da8241bd886ce11dfe92f698e",
+  "queries_sha256": "dc7173a8b7349d62720082c0327bad79c8fd19e7e4776b0054651e684db114f9",
+  "embedding_sha256": "1e514b180875809a3206d3c2ff6f2eeb2036060fc52337f304eb51bcd699a74e",
+  "input_files": [
+    {
+      "path": "data/sample_documents.txt",
+      "sha256": "bcfbd8920c29e350baf6f310c51bfe04eaa5e938fcce17f9bf82c5f4faf0810e",
+      "chunks": 9
+    },
+    {
+      "path": "data/documents/junior/security-basics.txt",
+      "sha256": "2abba88bdf5b68313ff95f2d5b2a6f2e7a1003810f7b02ea8e20c677542b4c60",
+      "chunks": 4
+    },
+    {
+      "path": "data/documents/junior/getting-started.md",
+      "sha256": "8b75a6c2cbb67754209bbdf3af15b5ba80c76139c3f92fb5146eaafc9b931452",
+      "chunks": 3
+    },
+    {
+      "path": "data/documents/senior/leadership-strategy.md",
+      "sha256": "a0395d3eceec83f1f7f51fe3a9e33bf7f4508e3fc4dc58bf36169afcf9d58923",
+      "chunks": 3
+    },
+    {
+      "path": "data/benchmark_samples/documents/access-review.md",
+      "sha256": "0987d5d609417898d51f05c0683df290b5ff114738896ad25482157c6705ed32",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/account-security.md",
+      "sha256": "60e7a407f0538f7cfb93fe96bb4665b70505f2c3c1ee511ea467c43cb55496e5",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/backup-verification.md",
+      "sha256": "1c21fd5eb08426a3cac3c9dc5ba3ce3854ed2fb6fb9156e4f37b6545d5cac8ef",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/budget-planning.md",
+      "sha256": "ff5a971dba154c937477bbb6c6f1bc845d17059d3c8bd7dbe502777476f790d5",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/capacity-planning.md",
+      "sha256": "03eaeefc67f25d52f04d93cf84eaaf9a61c62e0ea628ed768c6333d237dd466d",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/customer-support.md",
+      "sha256": "e480cc3086d3c6ab4fdc5402573f67c3b24d85813893bb2683d627219873bad6",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/data-retention.md",
+      "sha256": "7048f3a95b170608db1ecbb2448ab12ac520af55cb96c6d712cd2f803a8373c9",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/database-recovery.md",
+      "sha256": "23052c53b8fde3977b647cab7f74b8b206d7d162a4917292544508347147c73c",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/design-review.md",
+      "sha256": "57746e110b5ed0cf4399b3bbfec9b582c3f5bb86cddf83d47fd7373cf628b77c",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/document-classification.md",
+      "sha256": "5db8a67eca9a803180c945b5f07ce9a7c10c2951fb8866c2621dd24fef2df3ce",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/employee-onboarding.md",
+      "sha256": "74e447e6841889186979ae0fc67fad53939f501b488783547a07a267c9719a8a",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/incident-response.md",
+      "sha256": "ef39f2933a80eafcf26b50d02ea720d262e225886d60b7f0824ec73fc581b058",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/network-maintenance.md",
+      "sha256": "a6369bf6bbc07b648bd7d6e18c5c48d4fbe2f66095c9a036cdb7111a0a2b7230",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/performance-testing.md",
+      "sha256": "f40ade7b4374c1be970207c949eac9c2a3f166b3b808e4a47011049be9fdcc7d",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/project-handover.md",
+      "sha256": "3a09e85115cbfc7fc599d8ca52827ccf94d57a8f78c09ca09c6c0d1f0b415e02",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/quality-assurance.md",
+      "sha256": "b802a0ea8eb7cd0d491fd2616e7f9901346408644561b0b207abb2538194ef07",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/release-approval.md",
+      "sha256": "1b799a981109dab304e38f5ccbdc9d79c3b063f7297df0f00e9fdeacc74b935c",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/service-monitoring.md",
+      "sha256": "54f16445d6a014ec5d31c5c1404b7dc8c2e5c4462ad1811180461cbb43f7bde9",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/training-delivery.md",
+      "sha256": "0e9729866c31e58c1b554244b91a6be994a01d47c41ab4e09ddb75e38bcf1ee7",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/documents/vendor-assessment.md",
+      "sha256": "fa4ca3a7cdc33efdd4b220458ffae824592695abdcf468d4bd08db8bee776ae7",
+      "chunks": 500
+    },
+    {
+      "path": "data/benchmark_samples/queries.jsonl",
+      "sha256": "4f92f3fb1c5c423c3dadf8eb07ceb4ce8a695f0bb34ac79a929717cc43d08174"
+    }
+  ],
+  "available_unique_chunks": 10019,
+  "query_count": 120,
+  "repeats": 3,
+  "sizes": [
+    500,
+    2000,
+    10000
+  ],
+  "k": 5,
+  "hnsw": {
+    "M": 32,
+    "efConstruction": 40,
+    "efSearch": 16
+  },
+  "ivf": {
+    "nlist": 16,
+    "nprobe": 4,
+    "training": "indexed corpus only; FAISS may subsample to 256*nlist vectors",
+    "seed": 1932481826
+  },
+  "timing": "perf_counter_ns, serial single-query search, 10 warmups, no embedding/LLM/network time",
+  "memory": "serialized bytes / 2**20 (MiB), not process RAM",
+  "limitations": [
+    "Synthetic template distribution; near-duplicates possible",
+    "Recall is neighbour agreement, not human relevance",
+    "P99 is based on a small query sample; inspect raw timings",
+    "500-vector IVF training is below FAISS recommended 39*nlist=624 samples",
+    "One machine; timings can vary with scheduling and thermal state"
+  ],
+  "git_commit": "3d808f9351c885fa9dce0e94d9c8ed830442cc0c",
+  "source_sha256": {
+    "src/benchmark.py": "94942ae053ae4414cd62682a5568540987ea49cedd0c96c679e2c59f94134408",
+    "src/sample_documents.py": "4ecaf1b0a85ee84d1b8b00c4f01435cfab29bc89232abe3dcac7427f942a5e36",
+    "src/create_benchmark_samples.py": "3dfd3453368888808c46aa839024e1224a97e165496c189911563b696a8b5a9e",
+    "src/benchmark_data.py": "06a71f919aa2c80b302e8c3ff61ab717df36350c676788a6b80c9144529578bc",
+    "src/embeddings.py": "56753c7709c930ab954ba0e0c518fed6f8e2da379e09d045b37a1ea84b676fec",
+    "src/chunking.py": "761acfc8844e34097a14e6c7dfadb4a261f78e39d792638319ad410f8d2d5a1d",
+    "src/vector_index.py": "c26cbe72908d822764f157d9d8e567da58e45231babba98707a1eefd4cf62bf7",
+    "requirements-benchmark.txt": "9489be0d0eb695d909945910eb8ffaffc54850b405b3f062581919f6d4db3a6f",
+    "results/requirements-benchmark.lock.txt": "7bc3494165d92fd26f90a13a253504400466e177a848526852fe507e4e658138"
+  },
+  "ground_truth_boundary_ties": {
+    "500": 0,
+    "2000": 0,
+    "10000": 0
+  }
+}

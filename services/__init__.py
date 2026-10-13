@@ -1,4 +1,5 @@
 """Business logic services package for Folio."""
+from services.ocr_service import SUPPORTED_IMAGE_EXTENSIONS, extract_text_from_image
 from services.rag_service import (
     DEFAULT_CHROMA_DIR,
     DEFAULT_COLLECTION_NAME,
@@ -27,9 +28,11 @@ __all__ = [
     "LEGACY_COLLECTION_NAME",
     "NO_CONTEXT_REPLY",
     "RAG_PROMPT_TEMPLATE",
+    "SUPPORTED_IMAGE_EXTENSIONS",
     "build_acl_filter",
     "build_prompt",
     "build_registry_chunks",
+    "extract_text_from_image",
     "extract_unique_sources",
     "format_context",
     "get_chat_model",

@@ -24,7 +24,7 @@ DEFAULT_CHROMA_DIR = "./chroma"
 DEFAULT_COLLECTION_NAME = "folio_knowledge_base"
 LEGACY_COLLECTION_NAME = "langchain"
 DEFAULT_TOP_K = 3
-DEFAULT_LLM_MODEL = "gemini-1.5-flash"
+DEFAULT_LLM_MODEL = "gemini-3.8-flash"
 
 NO_CONTEXT_REPLY = "I cannot find this in your documents."
 
@@ -468,6 +468,12 @@ def _invoke_llm(llm: Any, prompt: str) -> str:
         content = response.content
         if isinstance(content, str):
             return content.strip()
+        if isinstance(content, list):
+            parts = [
+                item.get("text", "") if isinstance(item, dict) else str(item)
+                for item in content
+            ]
+            return "".join(parts).strip()
     if isinstance(response, str):
         return response.strip()
     return str(response).strip()

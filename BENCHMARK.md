@@ -1,5 +1,29 @@
 # Person 4: document-based FAISS benchmark
 
+## Quick run on the current Windows setup
+
+The installed Python 3.13 environment can run the benchmark tests and CLI.
+Its package versions differ from the recorded Python 3.11 run below, so record
+new measurements separately rather than treating them as an exact reproduction.
+Run from the repository root:
+
+```powershell
+$benchmarkPython = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
+$env:HF_HOME = Join-Path (Get-Location) 'data/vector_store/huggingface'
+& $benchmarkPython -m pytest -c benchmark_tests/pytest.ini benchmark_tests -q -p no:cacheprovider --basetemp=data/vector_store/benchmark-tests
+# Small run; first use downloads MiniLM from Hugging Face.
+& $benchmarkPython -m src.benchmark --sizes 500 --queries-count 100 --repeats 1 --seed 42 --output data/vector_store/benchmark-smoke
+# Full comparison: 500, 2000 and 10000 chunks; three builds per index.
+& $benchmarkPython -m src.benchmark --seed 42 --output data/vector_store/benchmark-full
+```
+
+These runs use local MiniLM embeddings and need no Gemini key. Internet access
+is needed until the model is cached. Results include CSV measurements and JSON
+metadata in the chosen output directory. They measure index construction, search
+latency, Recall@5 against exact neighbours, and serialized index size; they do
+not measure login, ingestion correctness, OCR, Gemini latency or answer quality.
+See [INGESTION.md](INGESTION.md) for ingestion and its separate tests.
+
 This branch starts from Person 2 PR #7, commit
 `cfc947143ee364b52c615c2aa0106c890f55b23e`, on `person_2`.
 It compares FlatIP, HNSW and IVF using real MiniLM encodings of saved sample files.

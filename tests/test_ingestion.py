@@ -38,6 +38,14 @@ class FakeChromaStore:
 
     def __init__(self):
         self.items: Dict[str, FakeVectorDoc] = {}
+        self._collection = self
+
+    def get(self):
+        return {"ids": list(self.items)}
+
+    def delete(self, ids):
+        for cid in ids:
+            self.items.pop(cid, None)
 
     def add_texts(
         self,
@@ -257,6 +265,111 @@ def test_verify_ingestion_detects_senior_leak_in_junior_filter():
 
     with pytest.raises(AssertionError, match="leaked"):
         verify_ingestion(vector_db=BrokenFilterStore())
+
+
+def test_new_file_is_registered_and_passes_retrieval_acl(tmp_path):
+    from services.rag_service import is_chunk_authorized
+
+    folder = tmp_path / "senior"
+    folder.mkdir()
+    (folder / "new-private-policy.md").write_text("Private planning policy.", encoding="utf-8")
+    with SessionLocal() as db:
+        texts, metas, ids = scan_external_documents(tmp_path, db=db)
+        doc = db.get(Document, "new-private-policy")
+        assert doc is not None
+        assert doc.content == texts[0] == "Private planning policy."
+        assert doc.level == "senior"
+        chunk = FakeVectorDoc(texts[0], metas[0])
+        assert is_chunk_authorized(chunk, "senior", db=db)
+        assert not is_chunk_authorized(chunk, "junior", db=db)
+        db.rollback()
+
+
+def test_new_file_round_trip_with_real_chroma(tmp_path):
+    from langchain_core.embeddings import Embeddings
+    from services.rag_service import get_vector_db, retrieve_authorized_chunks
+
+    class LocalTestEmbeddings(Embeddings):
+        def embed_documents(self, texts):
+            return [[1.0, float(len(text) % 7), 0.5] for text in texts]
+
+        def embed_query(self, text):
+            return self.embed_documents([text])[0]
+
+    folder = tmp_path / "documents" / "junior"
+    folder.mkdir(parents=True)
+    path = folder / "real-chroma-policy.txt"
+    path.write_text("Offline integration policy.", encoding="utf-8")
+    directory = str(tmp_path / "chroma")
+    embeddings = LocalTestEmbeddings()
+    with SessionLocal() as db:
+        ingest_all(persist_directory=directory, documents_dir=folder.parent,
+                   sample_pdf_path=None, embedding_function=embeddings, db=db)
+        store = get_vector_db(persist_directory=directory, embedding_function=embeddings)
+        hits = retrieve_authorized_chunks("policy", "junior", k=100, vector_db=store, db=db)
+        assert any(hit.metadata["document_id"] == "real-chroma-policy" for hit in hits)
+        assert db.get(Document, "real-chroma-policy").content == path.read_text()
+        db.rollback()
+
+
+def test_shortened_file_replaces_old_chunks(tmp_path, monkeypatch):
+    folder = tmp_path / "junior"
+    folder.mkdir()
+    path = folder / "shortening-policy.md"
+    path.write_text("Old obsolete policy paragraph. " * 100, encoding="utf-8")
+    store = FakeChromaStore()
+    monkeypatch.setattr("ingest.get_vector_db", lambda **kwargs: store)
+    with SessionLocal() as db:
+        ingest_all(documents_dir=tmp_path, sample_pdf_path=None, db=db, run_verification=False)
+        assert len([cid for cid in store.items if cid.startswith("shortening-policy_")]) > 1
+        path.write_text("Replacement policy only.", encoding="utf-8")
+        ingest_all(documents_dir=tmp_path, sample_pdf_path=None, db=db, run_verification=False)
+        remaining = [doc for doc in store.items.values() if doc.metadata["document_id"] == "shortening-policy"]
+        assert len(remaining) == 1
+        assert remaining[0].page_content == db.get(Document, "shortening-policy").content == "Replacement policy only."
+        db.rollback()
+
+
+def test_failed_embedding_preserves_old_vectors_and_rolls_back_registry(tmp_path, monkeypatch):
+    folder = tmp_path / "junior"
+    folder.mkdir()
+    (folder / "failed-import.txt").write_text("New import.", encoding="utf-8")
+    store = FakeChromaStore()
+    store.items["old_chunk"] = FakeVectorDoc("Previously indexed content", {})
+
+    def fail(**kwargs):
+        raise RuntimeError("Embedding service unavailable")
+
+    monkeypatch.setattr(store, "add_texts", fail)
+    monkeypatch.setattr("ingest.get_vector_db", lambda **kwargs: store)
+    with pytest.raises(RuntimeError, match="Embedding service"):
+        ingest_all(documents_dir=tmp_path, sample_pdf_path=None, run_verification=False)
+    assert "old_chunk" in store.items
+    with SessionLocal() as db:
+        assert db.get(Document, "failed-import") is None
+
+
+@pytest.mark.parametrize("scenario", ["duplicate", "missing-role", "role-conflict", "empty"])
+def test_invalid_file_import_fails_before_registry_changes(tmp_path, scenario):
+    junior = tmp_path / "junior"
+    junior.mkdir()
+    if scenario == "duplicate":
+        senior = tmp_path / "senior"
+        senior.mkdir()
+        (junior / "duplicate-policy.md").write_text("Junior policy")
+        (senior / "duplicate-policy.txt").write_text("Senior policy")
+    elif scenario == "missing-role":
+        (tmp_path / "unassigned-policy.txt").write_text("Unassigned policy")
+    elif scenario == "role-conflict":
+        (junior / "leadership-strategy.md").write_text("Senior content in junior folder")
+    else:
+        (junior / "empty-policy.txt").write_text("")
+    with SessionLocal() as db:
+        count = db.query(Document).count()
+        with pytest.raises(ValueError):
+            scan_external_documents(tmp_path, db=db)
+        assert db.query(Document).count() == count
+        db.rollback()
 
 
 def test_persisted_chroma_has_folio_knowledge_base_with_acl_metadata():

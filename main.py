@@ -9,9 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database.connection import Base, engine
 from routers.auth import router as auth_router
-from routers.chat import ChatRequest, router as chat_router
-from routers.documents import router as documents_router
-from services import rag_service
 
 load_dotenv()
 
@@ -38,10 +35,6 @@ app.add_middleware(
 
 # Include Authentication Router
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-# Include Document Library Router (role-filtered)
-app.include_router(documents_router, prefix="/api/documents", tags=["documents"])
-# Include Permission-Aware RAG Chat Router (/api/chat)
-app.include_router(chat_router, prefix="/api", tags=["chat"])
 
 
 @app.get("/")

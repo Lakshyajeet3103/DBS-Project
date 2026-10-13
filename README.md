@@ -1,340 +1,246 @@
-# Folio — Access-Controlled RAG Knowledge Engine
+# Folio - Access-Controlled RAG Knowledge Engine
 
-Folio is a Retrieval-Augmented Generation (RAG) system for enterprise knowledge access. Employees sign in with an assigned access level (**Junior** or **Senior**), browse only the documents they are cleared to see, and ask an assistant that answers from that same authorized corpus — never from restricted material outside their role.
+Folio is a document library and Retrieval-Augmented Generation (RAG) assistant with Junior and Senior access levels. The React frontend connects to a FastAPI backend that authenticates users, filters documents by role, retrieves authorized Chroma chunks, and generates answers with source links.
 
-The project combines:
+## Implemented features
 
-| Layer | Status | Role |
-| --- | --- | --- |
-| **Folio frontend** (`frontend/`) | Implemented (demo + API adapter) | Login, role-aware library, document reader, assistant UI |
-| **RAG backend** (`main.py`, `ingest.py`) | Partial | FastAPI + ChromaDB + Gemini embeddings/LLM chat |
-| **Indexing research** (`src/`) | Prototype | FAISS Flat / HNSW / IVF indexing experiments |
-| **Server-side auth & ACL retrieval** | Proposed | Required for production access control |
+| Component | Current behavior |
+| --- | --- |
+| Frontend | Login, overview, document library, reader, assistant, saved documents and access information |
+| Authentication | SQL users, bcrypt password hashes and server-side sessions in HttpOnly cookies |
+| Document API | Role-filtered listing and authorized document access |
+| RAG | Chroma metadata filtering followed by SQL registry authorization checks before generation |
+| Ingestion | SQL records, PDF, TXT, Markdown and image OCR; document registration and tagged chunks |
+| Benchmarks | Reproducible FAISS FlatIP, HNSW and IVF comparisons using local MiniLM embeddings |
 
-> **Security note:** Demo login and frontend filters are presentation behavior, not a security boundary. Production safety depends on authenticating every request on the server and filtering vector retrieval by role *before* context reaches the LLM.
-
----
-
-## Objectives
-
-1. **Least-privilege knowledge access** — Each employee sees and queries only documents matching their access level (Junior → Junior docs; Senior → Junior + Senior).
-2. **Grounded answers** — The assistant retrieves relevant passages from an authorized knowledge base and generates replies from that context, reducing hallucination on internal policies and guides.
-3. **Role consistency across surfaces** — Library search, document open, downloads, and chat all obey the same access rules.
-4. **Practical RAG pipeline** — Ingest documents → chunk → embed → store in a vector index → retrieve top-k → prompt an LLM with filtered context.
-5. **Path to production** — Define auth sessions, metadata-aware retrieval, and multi-format ingestion so the demo can grow into an enterprise knowledge workspace.
-
----
-
-## Scope
-
-### In scope (current + proposed)
-
-- Two-tier RBAC: `junior` and `senior` (deny-by-default for unknown roles)
-- Document metadata: title, category, type, year, access level, author, content
-- RAG chat over authorized documents (demo keyword matching today; LLM + vectors when backend is wired)
-- PDF ingestion into ChromaDB (backend prototype)
-- Frontend filters by text query, document type, year, and access level
-- Per-account bookmarks (browser `localStorage` in demo)
-- API contract for auth, documents, and chat (`frontend/API_CONTRACT.md`)
-- Optional extensions documented under [Improvements](#improvements): SQL user store, richer segregation (year, doc type), multi-format ingest, OCR
-
-### Out of scope (for now)
-
-- Role administration UI / self-service account creation
-- Upload pipeline in the product UI
-- Multi-tenant isolation across separate organizations
-- Fine-grained ABAC (department, region, document owner) beyond Junior/Senior
-- Real-time sync of bookmarks to a server
-- Conversation memory across chat turns (each question is independent today)
-
----
+Demo mode uses fictional documents and simulated authentication. API mode uses the backend and does not fall back to demo data when an API call fails.
 
 ## Access model
 
-| Role | Library | Assistant retrieval |
+| Role | Documents and retrieval |
+| --- | --- |
+| Junior | Junior documents only |
+| Senior | Junior and Senior documents |
+| Unknown or invalid | Access denied |
+
+The backend derives the role from the authenticated session. Chat cannot elevate access by supplying a role in its request. Retrieved chunks must also resolve to an authorized document in the SQL registry; orphan or reclassified chunks are checked before reaching the model.
+
+The seeded local accounts are:
+
+| Email | Password | Seeded access |
 | --- | --- | --- |
-| **Junior** | Junior documents only | Chunks tagged `level=junior` only |
-| **Senior** | Junior + Senior documents | Chunks tagged `level` in `{junior, senior}` |
-| **Unknown / invalid** | Denied | Denied |
+| `junior@folio.demo` | `Junior@123` | Six Junior documents |
+| `senior@folio.demo` | `Senior@123` | All nine sample documents |
 
-Senior inherits Junior access. Roles are assigned to accounts by the organization; users cannot pick a role after sign-in.
+These are demonstration credentials. Do not use them for a public deployment.
 
-**Demo accounts** (local preview only):
+## Run locally
 
-| Account | Password | Access |
-| --- | --- | --- |
-| `junior@folio.demo` | `Junior@123` | 6 Junior sample documents |
-| `senior@folio.demo` | `Senior@123` | All 9 sample documents |
+Run backend commands from the repository root. You need Python with the backend dependencies, Node.js/npm for the frontend, and a Gemini API key for live embeddings and chat. Image OCR additionally requires the Tesseract executable.
 
----
+### 1. Select the backend Python environment
 
-## How it works
+Use the interpreter where the backend dependencies are installed. On the current Windows setup:
 
-### End-to-end flow (target)
-
-```
-┌─────────────┐   login    ┌──────────────────┐
-│  Folio UI   │───────────►│  Auth / Session  │  role from server, not client
-│  (React)    │◄───────────│  (HttpOnly cookie)│
-└──────┬──────┘            └────────┬─────────┘
-       │ documents / chat           │
-       ▼                            ▼
-┌──────────────────────────────────────────────┐
-│              FastAPI application             │
-│  1. Authenticate request                     │
-│  2. Resolve role → metadata filter           │
-│  3. Embed query (Gemini embeddings)          │
-│  4. Chroma similarity search WITH filter     │
-│  5. Stuff authorized chunks into prompt      │
-│  6. Generate answer (Gemini chat) + sources  │
-└──────────────────────────────────────────────┘
-       ▲
-       │ ingest (offline / admin)
-┌──────┴───────┐    chunks + metadata     ┌────────────┐
-│  Documents   │ ───────────────────────► │  ChromaDB  │
-│ PDF / text…  │   level, type, year…     │  ./chroma  │
-└──────────────┘                          └────────────┘
+```powershell
+$backendPython = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
 ```
 
-### Frontend (implemented)
+For a fresh installation, create a virtual environment using a Python version compatible with `requirements.txt`, then install the dependencies with that environment's Python:
 
-1. User signs in → session stored in `sessionStorage` (demo) or cookie (live API).
-2. Document list is filtered with `canAccess(user, doc)` — Senior sees both levels; Junior never sees Senior titles, search hits, or excerpts.
-3. Opening a document by ID fails closed if the ID is outside the user’s level.
-4. Assistant chat:
-   - **Demo mode** (`VITE_DATA_MODE=demo`): keyword-scored excerpts from *accessible* documents only; no LLM call.
-   - **API mode** (`VITE_DATA_MODE=api`): `POST /api/chat` with `{ message, document_id? }`; server must enforce ACL.
+```powershell
+python -m venv .venv
+$backendPython = ".\.venv\Scripts\python.exe"
+& $backendPython -m pip install -r requirements.txt
+```
 
-### Backend RAG pipeline (partial)
+The existing Python 3.13 environment was used for the recent checks; a fresh installation from the requirements file was not verified in that run. Keep the separately pinned benchmark environment apart from the backend environment.
 
-1. **`ingest.py`** — Load PDF via `PyPDFLoader`, split with `RecursiveCharacterTextSplitter` (chunk size 1000, overlap 200), embed with `gemini-embedding-001`, persist to Chroma at `./chroma`.
-2. **`main.py`** — FastAPI app with CORS for Vite (`localhost:5173`). Loads Chroma, retrieves top-3 chunks, runs a stuff-documents RAG chain with `ChatGoogleGenerativeAI`, exposes:
-   - `GET /` — health
-   - `POST /api/chat` — `{ message }` → `{ reply }`  
-   **Missing today:** auth, document listing, and **role metadata filters on retrieval**.
+### 2. Configure the backend
 
-### Industry-aligned ACL pattern (verified)
+Create `.env` from `.env.example` only if it does not already exist:
 
-Production RAG systems should **push authorization into the vector query**, not only hide results in the UI:
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
 
-- Tag every chunk at ingest with metadata such as `level`, `type`, `year`, department, etc. ([Chroma metadata filtering](https://docs.trychroma.com/docs/querying-collections/metadata-filtering)).
-- At query time, derive an allow-list from the **server session** and pass a `where` / `filter` into similarity search (e.g. Junior: `{"level": "junior"}`; Senior: `{"level": {"$in": ["junior", "senior"]}}`).
-- Only authorized chunks enter the LLM prompt ([Cerbos RAG authorization](https://docs.cerbos.dev/cerbos/latest/recipes/ai/rag-authorization/), [AWS Bedrock + Verified Permissions](https://aws.amazon.com/blogs/architecture/secure-multi-tenant-rag-with-amazon-bedrock-and-verified-permissions/)).
-- Prefer filter **pushdown** in the vector store; post-retrieval filtering alone can leak sensitive text into top-k candidates and hurt recall for authorized users ([ACM: Securing the Agent](https://dl.acm.org/doi/pdf/10.1145/3786335.3813145)).
+Set the following values in `.env`, including your own API key:
 
----
+```dotenv
+DATABASE_URL=sqlite:///./data/folio.db
+ENVIRONMENT=development
+SESSION_DURATION_DAYS=7
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+GEMINI_API_KEY=your_gemini_api_key_here
+EMBEDDING_PROVIDER=gemini
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-3.5-flash-lite
+```
 
-## Proposed final architecture
+The default embedding model is `gemini-embedding-001`. The live chat implementation uses Gemini; setting `LLM_PROVIDER` alone does not install or select another provider. Restart the backend after changing `.env`.
 
-### 1. Identity & session
+For an initial demo setup, create the sample accounts and documents:
 
-- `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`
-- HttpOnly, Secure (HTTPS), SameSite cookie; CORS limited to the frontend origin with credentials
-- Role stored server-side; never trusted from the request body
-- Optional SQL store for users, password hashes, and role assignments
+```powershell
+& $backendPython -m database.seed
+```
 
-### 2. Document registry & ingestion
+Seeding resets the sample account passwords and updates the canonical sample documents. It is a setup/reset command, not a required step each time the server starts.
 
-- Canonical document records (id, title, level, type, year, category, storage URI)
-- Ingest pipeline attaches **chunk metadata** matching registry fields
-- Loaders: PDF (current), plain text / Markdown (planned), images via OCR (optional)
-- Re-index on document update; revoke by removing or re-tagging chunks
+### 3. Ingest documents and start the API
 
-### 3. Permission-aware retrieval
+```powershell
+& $backendPython ingest.py
+& $backendPython -m uvicorn main:app --reload --port 8000
+```
+
+Ingestion makes embedding API calls. The API runs at `http://127.0.0.1:8000`; its interactive documentation is at `/docs`.
+
+### 4. Start the frontend in another terminal
+
+From the repository root, create `frontend/.env.local` if needed:
+
+```powershell
+if (-not (Test-Path frontend/.env.local)) {
+    Copy-Item frontend/.env.example frontend/.env.local
+}
+```
+
+Set these values in `frontend/.env.local`:
+
+```dotenv
+VITE_DATA_MODE=api
+VITE_API_BASE_URL=
+```
+
+Leave the API base URL blank for local development. Vite proxies `/api` to port 8000, keeping browser requests and session cookies on the same origin. This works with both `localhost:5173` and `127.0.0.1:5173`.
+
+```powershell
+cd frontend
+npm.cmd ci
+npm.cmd run dev
+```
+
+Open `http://localhost:5173` and sign in with a seeded account. Restart Vite after changing its environment settings. `npm.cmd` avoids PowerShell's script execution-policy issue with `npm.ps1`.
+
+For a frontend-only preview, set `VITE_DATA_MODE=demo` and restart Vite. This mode needs neither the backend nor a Gemini key. A separately hosted production frontend needs an API URL or reverse proxy; Vite's development proxy is not included in the static build.
+
+## Ingest additional documents
+
+Place files in the corresponding access folder:
 
 ```text
-role = session.role
-filter = { "level": "junior" }                         # junior
-        | { "level": { "$in": ["junior", "senior"] } } # senior
-        | deny                                         # anything else
-
-retriever = vector_db.as_retriever(
-    search_kwargs={ "k": 3, "filter": filter }
-)
-# Optional: AND year / type / document_id scopes from the request
+data/documents/
+  junior/
+    onboarding.md
+    equipment-policy.pdf
+  senior/
+    planning.txt
 ```
 
-### 4. Generation
+Then run `ingest.py` from the project root and refresh the library.
 
-- Prompt: answer **only** from provided context; refuse when missing
-- Response includes `reply` + `sources[{id, title}]` for citation in the UI
-- Optional `document_id` scopes retrieval to one authorized document
+- Supported formats: PDF, TXT, MD, PNG, JPG and JPEG. Images use Tesseract OCR; scanned PDFs do not automatically use image OCR.
+- New files are registered in SQL so they appear in the library and pass retrieval authorization checks.
+- Existing document text is updated before chunking. Chunks use an 800-character size and 150-character overlap, with document ID, title, role, category, type, year and chunk index metadata.
+- Filenames must produce unique document IDs across folders. IDs use the lowercase filename stem with spaces and underscores replaced by hyphens.
+- New files require a `junior/` or `senior/` folder. A folder conflicting with an existing SQL access level causes an error.
+- Empty files, failed OCR and duplicate document IDs produce errors. Shortening a file replaces its old chunks after replacement embeddings are saved.
+- Removing a source file does not delete its SQL document. Remove the registry record explicitly when a document should be removed; subsequent successful ingestion prunes orphan chunks.
+- `data/sample_document.pdf` is a loader check during the main ingestion command. Put PDFs in the role folders to import them into the library.
 
-### 5. Indexing strategy (research track)
+SQL and Chroma do not share a transaction. After a partial vector-store failure, rerun ingestion to reconcile them. Changing embedding models requires a compatible rebuilt collection; do not mix vector dimensions or models in an existing collection.
 
-`src/` prototypes FAISS indexes for latency/recall trade-offs as the corpus grows:
+See [INGESTION.md](INGESTION.md) for details and isolated tests.
 
-| Strategy | Behavior |
+## API endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/` | Backend health check |
+| POST | `/api/auth/login` | Authenticate and set the session cookie |
+| GET | `/api/auth/me` | Return the current user |
+| POST | `/api/auth/logout` | Revoke the session and clear the cookie |
+| GET | `/api/documents` | List authorized documents |
+| GET | `/api/documents/{document_id}` | Read one authorized document |
+| POST | `/api/chat` | Answer from authorized context with source links |
+
+Chat accepts `{"message": "...", "document_id": "optional-document-id"}` and returns `{"reply": "...", "sources": [{"id": "...", "title": "..."}]}`. Requests without an authorized session are rejected. Questions without suitable authorized context receive a refusal rather than an answer from unrestricted documents.
+
+## Run benchmarks
+
+The research pipeline compares FlatIP, HNSW and IVF using normalized MiniLM embeddings of saved sample documents. It measures build time, search latency, Recall@5 against exact vector neighbours, and serialized index size. It does not measure ingestion correctness, Gemini response time, OCR or answer quality.
+
+The current Windows Python environment can run the benchmark tests and CLI. From the repository root:
+
+```powershell
+$benchmarkPython = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
+$env:HF_HOME = Join-Path (Get-Location) 'data/vector_store/huggingface'
+
+# Small trial: 500 vectors, 100 queries, one build per index.
+& $benchmarkPython -m src.benchmark --sizes 500 --queries-count 100 --repeats 1 --seed 42 --output data/vector_store/benchmark-smoke
+
+# Full comparison: 500, 2000 and 10000 vectors, three builds per index.
+& $benchmarkPython -m src.benchmark --seed 42 --output data/vector_store/benchmark-full
+```
+
+The first run downloads MiniLM from Hugging Face and needs internet access. Embedding and index evaluation then run locally; no Gemini key is required. The recent smoke-run attempt stalled during that initial download, so it did not produce new measurements.
+
+Each output directory contains summary, query and trial CSV files plus `benchmark_metadata.json`. An explicit seed reproduces workload selection; timings still vary. Omitting `--seed` generates and records a fresh seed. Results use synthetic sample documents, so recall is neighbour agreement rather than human-rated relevance.
+
+See [BENCHMARK.md](BENCHMARK.md) for the recorded measurements, dataset details, external JSONL inputs and the isolated Python 3.11 environment with pinned dependencies. The current Python 3.13 package versions differ from that recorded environment. Do not install the benchmark lock into the working backend environment.
+
+## Verification
+
+Backend tests seed data during collection. Use the isolation plugin to protect the working SQL database:
+
+```powershell
+& $backendPython -m pytest -p benchmark_tests.backend_isolation tests -q -p no:cacheprovider --basetemp=data/vector_store/backend-tests
+& $benchmarkPython -m pytest -c benchmark_tests/pytest.ini benchmark_tests -q -p no:cacheprovider --basetemp=data/vector_store/benchmark-tests
+```
+
+Frontend checks, from `frontend/`:
+
+```powershell
+npm.cmd test
+npm.cmd run build
+```
+
+Recent checks passed: 79 backend tests, one additional real-Chroma ingestion round trip, 13 benchmark tests, and five frontend tests plus the production build. The Chroma ingestion test uses local deterministic test embeddings; OCR tests mock Tesseract. These results do not establish production readiness or a completed fresh benchmark run.
+
+## Troubleshooting
+
+| Symptom | Check |
 | --- | --- |
-| **Flat** | Exact search; perfect recall; latency grows with corpus size |
-| **HNSW** | Graph ANN; strong recall, higher memory |
-| **IVF** | Clustered ANN; tunable via `nlist` / `nprobe` |
-
-Embeddings experiment path uses `sentence-transformers/all-MiniLM-L6-v2`; the live Gemini path uses `gemini-embedding-001`.
-
-### 6. Presentation
-
-Folio UI: Overview, Document library (search + filters), Reader + text download, AI assistant, Saved documents, Access explanation — all role-aware.
-
----
+| Session expires immediately after login | Leave `VITE_API_BASE_URL` blank locally, restart Vite, and verify the backend is on port 8000. |
+| Cannot reach the backend | Start Uvicorn with the correct Python environment and check the health endpoint. |
+| Assistant is busy or times out | Check provider availability and the configured model. The chat client has a 20-second request timeout and a limited retry configuration; supported provider busy errors return HTTP 503. |
+| New document is missing | Check the role folder, filename uniqueness, ingestion output and SQL registration. Refresh the library after a successful import. |
+| Image yields no text | Install Tesseract and ensure its executable is available to the backend process. |
+| Benchmark fails before measurements | Allow the initial MiniLM download to finish and use the documented dependency environment. |
 
 ## Project structure
 
-```
-DBS-Project/
-├── main.py                 # FastAPI RAG chat service
-├── ingest.py               # PDF → chunks → Chroma embeddings
-├── requirements.txt        # FAISS / sentence-transformers research deps
-├── data/
-│   ├── sample_document.pdf
-│   └── sample_documents.txt
-├── src/
-│   ├── chunking.py         # Text / token chunking utilities
-│   ├── embeddings.py       # Local MiniLM embeddings
-│   ├── vector_index.py     # FAISS Flat / HNSW / IVF builders
-│   └── benchmark.py        # Benchmark harness (stub)
-├── results/                # Benchmark outputs
-├── chroma/                 # Persisted Chroma vector store (local)
-├── additional features.txt # Product backlog notes
-└── frontend/               # Folio — React + Vite workspace
-    ├── API_CONTRACT.md     # Auth / documents / chat contract
-    ├── src/
-    │   ├── App.jsx         # Screens & session lifecycle
-    │   ├── api.js          # Demo vs live API adapter
-    │   ├── access.js       # RBAC helpers & demo retrieval
-    │   └── data.js         # Fictional sample documents
-    └── tests/access.test.js
+```text
+main.py                  FastAPI entry point
+core/                    Authentication and access-control helpers
+routers/                 Auth, document and chat APIs
+database/                SQL connection, models and demo seeding
+services/                RAG retrieval/generation and OCR
+ingest.py                File import, SQL synchronization and Chroma ingestion
+frontend/                React/Vite application and frontend tests
+tests/                   Backend and ingestion tests
+src/                     FAISS benchmarks, chunking and MiniLM embeddings
+benchmark_tests/         Benchmark tests and backend-isolation plugin
+data/documents/          Role-organized source files
+data/benchmark_samples/  Fictional benchmark documents and queries
+data/vector_store/       Ignored local caches, test data and benchmark outputs
+chroma/                  Persisted application vector store
+results/                 Recorded benchmark outputs and environment lock
 ```
 
----
+## Remaining limitations
 
-## Current status
+There is no upload/admin UI, self-service registration, multi-tenant isolation, or server-side conversation memory. Bookmarks are stored in the browser. Public deployment still needs operational controls such as rate limiting, audit logging and deployment-specific cookie/CORS configuration. Generated answers can be wrong; verify important claims against the cited documents.
 
-| Capability | Frontend demo | Backend today | Proposed production |
-| --- | --- | --- | --- |
-| Login / roles | Simulated | Missing | Cookie session + SQL users |
-| List / open documents | Yes (RBAC) | Missing | Authorized document APIs |
-| Chat | Keyword excerpts | Unfiltered RAG | Session + Chroma metadata filter |
-| Citations / sources | Yes | Reply only | `sources` array |
-| Multi-format ingest | N/A | PDF only | PDF, TXT, MD, OCR images |
-| Index benchmarking | N/A | FAISS prototypes | Guide choice of Flat/HNSW/IVF |
-
----
-
-## Limitations
-
-1. **No server-side authorization** — Current `POST /api/chat` retrieves from the full Chroma collection; any caller who can reach the API could get unrestricted context.
-2. **Demo auth is not security** — Credentials and documents ship in the JS bundle for preview; never put real restricted content there.
-3. **Unlabeled chunks** — Ingest does not yet write `level` / `type` / `year` metadata required for ACL filters.
-4. **Single chat endpoint** — Auth and document APIs from `API_CONTRACT.md` are not implemented on the backend.
-5. **No conversational memory** — Each question is independent; history is UI-only.
-6. **Dependency split** — Root `requirements.txt` lists research packages (FAISS, sentence-transformers); the Gemini/LangChain/FastAPI stack used by `main.py` / `ingest.py` is not fully declared there.
-7. **Benchmark suite incomplete** — `results/benchmark_results.csv` is a header-only stub; `benchmark.py` is empty.
-8. **Scale & ops** — Local Chroma folder, no rate limiting, audit logging, or revocation workflow for departed employees.
-9. **Model grounding risk** — Even with filters, LLMs can still produce incorrect paraphrases; users should verify important answers against source documents.
-
----
-
-## Improvements
-
-Prioritized toward the enterprise backlog in `additional features.txt` and industry RAG ACL practice:
-
-1. **Implement the API contract** — Auth, documents, and permission-aware chat; filter retrieval by session role before the LLM.
-2. **Metadata at ingest** — Persist `level`, `type`, `year`, `document_id` on every chunk; support Chroma `$and` / `$in` filters.
-3. **SQL (or equivalent) user store** — Hashed passwords, role assignment, session revocation.
-4. **Richer segregation** — Combine role with year and document type in both library filters and vector `where` clauses.
-5. **Multi-format loaders** — Text, Markdown, and optional image OCR alongside PDF.
-6. **Model options** — Configurable LLM vs smaller SLM; optional local embeddings for air-gapped deployments.
-7. **Post-retrieval re-check** — Dual-layer ACL: metadata filter plus verify each candidate against the document registry before prompting ([Amazon Quick ACL pattern](https://aws.amazon.com/blogs/machine-learning/rethinking-access-control-for-rag-with-amazon-quick-and-amazon-bedrock/)).
-8. **Indexing guidance** — Complete Flat/HNSW/IVF benchmarks to pick an index as the corpus grows.
-9. **Observability** — Audit which documents were retrieved per user/query; rate limits; redaction of secrets in logs.
-10. **Admin tooling** — Controlled upload, role changes, and re-indexing without shipping restricted PDFs to the browser.
-
----
-
-## Tech stack
-
-| Area | Choice |
-| --- | --- |
-| Frontend | React 18, Vite 5 |
-| Backend API | FastAPI, Uvicorn, CORS middleware |
-| Embeddings (live path) | Google `gemini-embedding-001` via LangChain |
-| LLM | Google Gemini chat (`ChatGoogleGenerativeAI`) |
-| Vector store | ChromaDB (persisted `./chroma`) |
-| Ingest | LangChain `PyPDFLoader`, `RecursiveCharacterTextSplitter` |
-| Research embeddings | `sentence-transformers/all-MiniLM-L6-v2` |
-| Research indexes | FAISS Flat / HNSW / IVF |
-
----
-
-## Quick start
-
-### Folio frontend (demo — no API key required)
-
-```sh
-cd frontend
-npm install
-npm run dev -- --host 127.0.0.1
-```
-
-Open http://127.0.0.1:5173 and use a demo account from the login panel.
-
-```sh
-npm test
-npm run build
-```
-
-### Live API mode (when backend endpoints exist)
-
-```sh
-cp frontend/.env.example frontend/.env.local
-# Set VITE_DATA_MODE=api and VITE_API_BASE_URL=http://127.0.0.1:8000
-```
-
-See [frontend/API_CONTRACT.md](frontend/API_CONTRACT.md) and [frontend/README.md](frontend/README.md).
-
-### RAG backend (prototype)
-
-1. Create a `.env` with `GEMINI_API_KEY` (never commit it; `.env` is gitignored).
-2. Install the LangChain / FastAPI / Chroma / Google GenAI packages used by `main.py` and `ingest.py`.
-3. Ingest once:
-
-```sh
-python ingest.py   # expects data/sample_document.pdf
-```
-
-4. Serve:
-
-```sh
-uvicorn main:app --reload
-```
-
-Until auth and metadata filters are added, treat this API as a **local lab only**.
-
----
-
-## Acceptance criteria (production)
-
-1. A Junior session cannot fetch any Senior document by guessing an ID.
-2. Search and chat never expose Senior-only facts to Juniors.
-3. Senior sessions can retrieve both levels.
-4. Editing browser storage, request bodies, or URLs cannot elevate a server session.
-5. Logout and expiration invalidate protected requests.
-6. Wrong-origin mutations are rejected by CORS / CSRF controls.
-
----
-
-## References
-
-- [Chroma metadata filtering](https://docs.trychroma.com/docs/querying-collections/metadata-filtering)
-- [Cerbos — Authorization in RAG systems](https://docs.cerbos.dev/cerbos/latest/recipes/ai/rag-authorization/)
-- [AWS — Secure multi-tenant RAG with Bedrock & Verified Permissions](https://aws.amazon.com/blogs/architecture/secure-multi-tenant-rag-with-amazon-bedrock-and-verified-permissions/)
-- [AWS — Real-time ACL checks for RAG](https://aws.amazon.com/blogs/machine-learning/rethinking-access-control-for-rag-with-amazon-quick-and-amazon-bedrock/)
-- [Google Gemini embeddings](https://ai.google.dev/gemini-api/docs/embeddings)
-- [LangChain — Google Generative AI embeddings](https://docs.langchain.com/oss/python/integrations/embeddings/google_generative_ai)
-
----
-
-## License / data disclaimer
-
-Sample documents in the frontend are **fictional** and for demonstration only. Do not store or ship real restricted employee or company documents in client bundles or public repositories.
+Sample accounts and documents are fictional. Keep API keys in ignored environment files and real restricted documents out of frontend bundles and public repositories.

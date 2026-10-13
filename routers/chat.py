@@ -72,4 +72,16 @@ def chat_endpoint(
     except (TypeError, ValueError):
         pass
 
-    return rag_service.query_rag(**kwargs)
+    try:
+        return rag_service.query_rag(**kwargs)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # SDK versions expose HTTP status as either code or status_code.
+        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+        if code in (429, 503, 504) or isinstance(exc, TimeoutError):
+            raise HTTPException(
+                status_code=503,
+                detail="The AI service is temporarily busy. Please try again shortly.",
+            ) from exc
+        raise

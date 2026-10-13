@@ -11,6 +11,7 @@ Implements Tasks 2.1, 2.2, 2.3, and 2.4:
 - Task 2.4: CLI entrypoint and post-ingestion metadata filter pushdown verification.
 """
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -100,7 +101,7 @@ def load_sql_registry_documents(db: Optional[Session] = None) -> List[Document]:
     session = SessionLocal() if own_session else db
     try:
         count = session.query(Document).count()
-        if count == 0:
+        if count == 0 and own_session:
             seed_database()
         return session.query(Document).order_by(Document.id).all()
     finally:
@@ -203,7 +204,29 @@ def scan_external_documents(
     chunk_size: int = CHUNK_SIZE,
     chunk_overlap: int = CHUNK_OVERLAP,
 ) -> Tuple[List[str], List[Dict[str, Any]], List[str]]:
-    """Scan `data/documents/` for PDF, TXT, MD, and image files and build tagged chunks."""
+    """Register file contents in SQL and build chunks using the same document IDs.
+
+    New documents must be under an explicit junior/ or senior/ directory.
+    A supplied SQL session remains under the caller's transaction control.
+    """
+    own_session = db is None
+    session = SessionLocal() if own_session else db
+    try:
+        result = _scan_external_documents(documents_dir, session, chunk_size, chunk_overlap)
+        session.flush()
+        if own_session:
+            session.commit()
+        return result
+    except Exception:
+        if own_session:
+            session.rollback()
+        raise
+    finally:
+        if own_session:
+            session.close()
+
+
+def _scan_external_documents(documents_dir, db, chunk_size, chunk_overlap):
     base_path = Path(documents_dir)
     if not base_path.exists():
         return [], [], []
@@ -215,27 +238,43 @@ def scan_external_documents(
     metadatas: List[Dict[str, Any]] = []
     ids: List[str] = []
 
+    seen_ids = {}
+    updates = []
     for file_path in sorted(base_path.rglob("*")):
         if not file_path.is_file() or file_path.suffix.lower() not in supported_exts:
             continue
 
-        content = load_file_content(file_path)
-        if not content:
-            continue
-
         stem = file_path.stem.lower().replace("_", "-").replace(" ", "-")
+        if stem in seen_ids:
+            raise ValueError(f"Duplicate document ID {stem!r}: {seen_ids[stem]} and {file_path}. Use unique filenames.")
+        seen_ids[stem] = file_path
         reg_doc = registry_docs.get(stem)
 
-        # Infer access level from parent folder ('junior' or 'senior') if not in registry
-        parent_names = {p.name.lower() for p in file_path.parents}
-        inferred_level = "senior" if "senior" in parent_names else "junior"
+        folder_levels = set(file_path.relative_to(base_path).parts[:-1]) & {"junior", "senior"}
+        if len(folder_levels) > 1 or (not reg_doc and not folder_levels):
+            raise ValueError(f"Place {file_path} under exactly one junior/ or senior/ folder.")
+        inferred_level = next(iter(folder_levels), None)
+        if reg_doc and inferred_level and reg_doc.level != inferred_level:
+            raise ValueError(f"Access level for {file_path} conflicts with its SQL registry record.")
+
+        content = load_file_content(file_path)
+        if not content.strip():
+            raise ValueError(f"No text extracted from {file_path}. Check the file or OCR installation.")
 
         doc_id = reg_doc.id if reg_doc else stem
         title = reg_doc.title if reg_doc else file_path.stem.replace("-", " ").replace("_", " ").title()
         level = reg_doc.level if reg_doc else inferred_level
         category = reg_doc.category if reg_doc else "Knowledge Base"
         doc_type = reg_doc.type if reg_doc else "Guide"
-        year = str(reg_doc.year) if reg_doc else "2026"
+        year = str(reg_doc.year) if reg_doc else str(datetime.now(timezone.utc).year)
+
+        if reg_doc is None:
+            reg_doc = Document(
+                id=doc_id, title=title, level=level, category=category,
+                type=doc_type, year=year, date=datetime.now(timezone.utc).date().isoformat(),
+                author="Imported document", description=f"Imported from {file_path.name}",
+            )
+        updates.append((reg_doc, content, file_path))
 
         pieces = split_text_into_chunks(content, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         for idx, piece in enumerate(pieces):
@@ -252,6 +291,12 @@ def scan_external_documents(
             metadatas.append(meta)
             ids.append(f"{doc_id}_chunk_{idx}")
 
+    # Apply only after every file has loaded and passed identity/access checks.
+    for doc, content, file_path in updates:
+        doc.content = content
+        doc.file_path = str(file_path.resolve())
+        doc.minutes = max(1, (len(content.split()) + 199) // 200)
+        db.add(doc)
     return texts, metadatas, ids
 
 
@@ -337,8 +382,39 @@ def ingest_all(
     db: Optional[Session] = None,
     run_verification: bool = True,
 ) -> Dict[str, Any]:
-    """Ingest SQL registry documents + external files in `data/documents/` + sample PDF into ChromaDB."""
+    """Sync external files and SQL documents to Chroma; validate the sample PDF loader."""
+    own_session = db is None
+    if own_session:
+        load_sql_registry_documents()  # Initialize demo records only for the default database.
+    session = SessionLocal() if own_session else db
+    try:
+        result = _ingest_all(
+            persist_directory, collection_name, documents_dir, sample_pdf_path,
+            embedding_function, session, run_verification,
+        )
+        if own_session:
+            session.commit()
+        return result
+    except Exception:
+        if own_session:
+            session.rollback()
+        raise
+    finally:
+        if own_session:
+            session.close()
+
+
+def _ingest_all(persist_directory, collection_name, documents_dir, sample_pdf_path,
+                embedding_function, db, run_verification):
+    # Refresh SQL content before chunking, so a shorter file replaces ALL old chunks.
+    scan_external_documents(documents_dir=documents_dir, db=db)
     sql_docs = load_sql_registry_documents(db=db)
+
+    # Validate optional input before making any changes to the vector store.
+    if sample_pdf_path and os.path.isfile(sample_pdf_path):
+        pdf_text = load_pdf_file(sample_pdf_path)
+        pdf_chunks = split_text_into_chunks(pdf_text)
+        print(f"Verified PDF loader on {sample_pdf_path} ({len(pdf_chunks)} chunks extracted).")
 
     chunk_map: Dict[str, Tuple[str, Dict[str, Any]]] = {}
 
@@ -347,11 +423,6 @@ def ingest_all(
         texts, metas, ids = chunk_document_record(doc)
         for text, meta, cid in zip(texts, metas, ids):
             chunk_map[cid] = (text, meta)
-
-    # 2. Scan external multi-format documents in data/documents/
-    ext_texts, ext_metas, ext_ids = scan_external_documents(documents_dir=documents_dir, db=db)
-    for text, meta, cid in zip(ext_texts, ext_metas, ext_ids):
-        chunk_map[cid] = (text, meta)
 
     all_ids = list(chunk_map.keys())
     all_texts = [chunk_map[cid][0] for cid in all_ids]
@@ -363,37 +434,20 @@ def ingest_all(
         embedding_function=embedding_function,
     )
 
-    # Remove legacy untagged 'langchain' collection if present and prune stale chunk IDs
-    client = getattr(vector_db, "_client", None)
-    if client is not None:
-        try:
-            existing_names = {
-                c.name if hasattr(c, "name") else str(c) for c in client.list_collections()
-            }
-            if "langchain" in existing_names and collection_name != "langchain":
-                client.delete_collection("langchain")
-        except Exception:
-            pass
-
+    # Do not prune usable vectors until replacement embeddings have been saved.
+    # Other collections may belong to another workflow and are left intact.
     collection_handle = getattr(vector_db, "_collection", None)
+    stale_ids = []
     if collection_handle is not None:
-        try:
-            existing_ids = set(collection_handle.get().get("ids") or [])
-            stale_ids = list(existing_ids - set(all_ids))
-            if stale_ids:
-                collection_handle.delete(ids=stale_ids)
-        except Exception:
-            pass
+        existing_ids = set(collection_handle.get().get("ids") or [])
+        stale_ids = list(existing_ids - set(all_ids))
 
     if all_texts:
         print(f"Upserting {len(all_texts)} tagged chunks into ChromaDB collection '{collection_name}'...")
         vector_db.add_texts(texts=all_texts, metadatas=all_metadatas, ids=all_ids)
 
-    # 3. Validate data/sample_document.pdf loader path
-    if sample_pdf_path and os.path.isfile(sample_pdf_path):
-        pdf_text = load_pdf_file(sample_pdf_path)
-        pdf_chunks = split_text_into_chunks(pdf_text)
-        print(f"Verified PDF loader on {sample_pdf_path} ({len(pdf_chunks)} chunks extracted).")
+    if stale_ids:
+        collection_handle.delete(ids=stale_ids)
 
     if run_verification:
         verify_ingestion(vector_db=vector_db)

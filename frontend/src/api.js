@@ -1,7 +1,9 @@
 import { accounts, documents } from './data';
 import { canAccess, findExcerpts, validRole } from './access';
 export const DEMO = import.meta.env.VITE_DATA_MODE !== 'api';
-const BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+// Use the frontend origin by default so browsers keep the session cookie on
+// localhost as well as 127.0.0.1. Vite forwards /api requests to the backend.
+const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const SESSION_KEY = 'folio-demo-session';
 export class ApiError extends Error {
   constructor(message, status) {
@@ -28,7 +30,9 @@ async function request(path, options = {}) {
         401: 'Your session has expired. Please sign in again.',
         403: 'You do not have permission to access this content.',
         404: 'This resource is not available on the backend yet.',
-        429: 'Too many requests. Please wait a moment and try again.'
+        429: 'Too many requests. Please wait a moment and try again.',
+        503: 'The AI service is temporarily busy. Please try again shortly.',
+        504: 'The AI service took too long to respond. Please try again.'
       };
       throw new ApiError(path === '/api/auth/login' && response.status === 401 ? 'The email or password is incorrect.' : messages[response.status] || 'The server could not complete your request. Please try again.', response.status);
     }

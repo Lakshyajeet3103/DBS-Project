@@ -87,6 +87,23 @@ def test_chat_requires_authentication():
     assert res.status_code == 401
 
 
+@pytest.mark.parametrize("code", [429, 503, 504])
+def test_chat_returns_actionable_error_when_provider_is_busy(monkeypatch, code):
+    class ProviderUnavailable(Exception):
+        pass
+
+    def unavailable(**kwargs):
+        error = ProviderUnavailable("private provider diagnostics")
+        error.code = code
+        raise error
+
+    monkeypatch.setattr(rag_service, "query_rag", unavailable)
+    client = junior_client()
+    response = client.post("/api/chat", json={"message": "How do I get started?"})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "The AI service is temporarily busy. Please try again shortly."
+
+
 def test_chat_rejects_empty_message():
     client = junior_client()
     res = client.post("/api/chat", json={"message": "   "})

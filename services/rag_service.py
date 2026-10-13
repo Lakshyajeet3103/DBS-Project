@@ -24,7 +24,7 @@ DEFAULT_CHROMA_DIR = "./chroma"
 DEFAULT_COLLECTION_NAME = "folio_knowledge_base"
 LEGACY_COLLECTION_NAME = "langchain"
 DEFAULT_TOP_K = 3
-DEFAULT_LLM_MODEL = "gemini-3.8-flash"
+DEFAULT_LLM_MODEL = "gemini-3.5-flash-lite"
 
 NO_CONTEXT_REPLY = "I cannot find this in your documents."
 
@@ -452,7 +452,13 @@ def get_chat_model(model_name: Optional[str] = None):
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not set in the environment.")
     resolved_model = model_name or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
-    return ChatGoogleGenerativeAI(model=resolved_model, api_key=api_key, temperature=0.0)
+    return ChatGoogleGenerativeAI(
+        model=resolved_model,
+        api_key=api_key,
+        temperature=0.0,
+        timeout=20,
+        max_retries=1,
+    )
 
 
 def _invoke_llm(llm: Any, prompt: str) -> str:

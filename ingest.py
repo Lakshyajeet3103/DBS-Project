@@ -1,37 +1,128 @@
 # this is run when the ai needs to read a new doc; only run once, then the chromaDB will store the embeddings
 
 import os
+from typing import Any, Optional
+
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma # it uses chromadb package
 
-load_dotenv() # loads the key to the environment variables
-if not os.getenv("GEMINI_API_KEY"):
-    raise ValueError("GEMINI_API_KEY is not in the .env file!")
+from database.connection import Base, SessionLocal, engine
+from database.models import Document
+from database.seed import seed_database
+from services.rag_service import (
+    DEFAULT_CHROMA_DIR,
+    DEFAULT_COLLECTION_NAME,
+    build_registry_chunks,
+    get_embedding_model,
+    get_vector_db,
+    ingest_registry_documents,
+)
 
-def process_and_save_pdf(pdf_path: str):
+load_dotenv()  # loads the key to the environment variables
+
+
+def process_and_save_pdf(
+    pdf_path: str = "data/sample_document.pdf",
+    document_id: str = "getting-started",
+    level: str = "junior",
+    persist_directory: str = DEFAULT_CHROMA_DIR,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+    embedding_function: Any = None,
+):
+    """Load a PDF, attach canonical SQL registry metadata, and upsert into the shared Chroma collection."""
+    from langchain_chroma import Chroma
+    from langchain_community.document_loaders import PyPDFLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+
     print(f"Loading {pdf_path}")
-    
+
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        reg_doc = db.query(Document).filter(Document.id == document_id).first()
+        if reg_doc is None:
+            seed_database()
+            reg_doc = db.query(Document).filter(Document.id == document_id).first()
+        doc_meta = {
+            "document_id": reg_doc.id if reg_doc else document_id,
+            "title": reg_doc.title if reg_doc else "Getting started at Folio",
+            "level": reg_doc.level if reg_doc else level,
+            "category": reg_doc.category if reg_doc else "Onboarding",
+            "type": reg_doc.type if reg_doc else "Guide",
+            "year": str(reg_doc.year) if reg_doc else "2026",
+        }
+    finally:
+        db.close()
+
     # Extracting the PDF Text from the pdf file
     loader = PyPDFLoader(pdf_path)
-    raw_pages = loader.load() # reading raw pages out of pdf
-    
+    raw_pages = loader.load()  # reading raw pages out of pdf
+
     # To chunk the data, we instantiate and use the RecursiveCharacterTextSplitter
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size = 1000, chunk_overlap = 200, length_function = len) # 1000 chars each chunk and 200 overlapping chars between chunks
-    chunks = text_splitter.split_documents(raw_pages) # split_page is used to split a single page into chunks but split_documents is used to split multiple pages
-    
-    print(f"Chunked the pdf into {len(chunks)} chunks.")
-    
-    # Vectorize the chunks using the embeddings ai model and store in chromadb
-    embed_model = GoogleGenerativeAIEmbeddings(model = 'gemini-embedding-001')
-    
-    print("Converting to vectors and saving to ChromaDB")
-    # creating a chromadb in a folder ./chroma
-    vector_db = Chroma.from_documents(documents = chunks, embedding = embed_model, persist_directory='./chroma')
-    
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,
+        chunk_overlap=150,
+        length_function=len,
+    )
+    chunks = text_splitter.split_documents(raw_pages)
+
+    ids = []
+    for idx, chunk in enumerate(chunks):
+        chunk.metadata = {
+            **doc_meta,
+            "chunk_index": idx,
+        }
+        ids.append(f"{doc_meta['document_id']}_pdf_chunk_{idx}")
+
+    print(f"Chunked the pdf into {len(chunks)} metadata-tagged chunks.")
+
+    embed_model = embedding_function or get_embedding_model()
+
+    print(f"Converting to vectors and saving to ChromaDB collection '{collection_name}'")
+    vector_db = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embed_model,
+        collection_name=collection_name,
+    )
+    # Ensure canonical SQL registry documents are also indexed with full ACL metadata
+    ingest_registry_documents(vector_db=vector_db)
+    if chunks:
+        vector_db.add_documents(documents=chunks, ids=ids)
+
     print("Success! Chunks were converted to vector embeddings and stored in chromadb. AI database is ready.")
-    
-if __name__ == "__main__": # the __name__ variable is set to the file name that is being currently run. so when we do python ingest.py or add import ingest while in main.py, the __name__ is set to __main__
-    process_and_save_pdf("data/sample_document.pdf")        
+    return vector_db
+
+
+def ingest_all(
+    persist_directory: str = DEFAULT_CHROMA_DIR,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+    embedding_function: Any = None,
+    pdf_path: Optional[str] = "data/sample_document.pdf",
+) -> int:
+    """Ingest all canonical SQL registry documents (and optional sample PDF) with ACL metadata."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        if db.query(Document).count() == 0:
+            seed_database()
+    finally:
+        db.close()
+
+    if pdf_path and os.path.isfile(pdf_path):
+        vdb = process_and_save_pdf(
+            pdf_path=pdf_path,
+            persist_directory=persist_directory,
+            collection_name=collection_name,
+            embedding_function=embedding_function,
+        )
+        return len(build_registry_chunks()["texts"])
+
+    vector_db = get_vector_db(
+        persist_directory=persist_directory,
+        collection_name=collection_name,
+        embedding_function=embedding_function,
+    )
+    return ingest_registry_documents(vector_db=vector_db)
+
+
+if __name__ == "__main__":
+    process_and_save_pdf("data/sample_document.pdf")

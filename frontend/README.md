@@ -24,7 +24,7 @@ Demo chat quotes matching accessible sample passages; it does not call an LLM. B
 
 ## Backend integration
 
-Copy `.env.example` to `.env.local`, set `VITE_DATA_MODE=api`, and set `VITE_API_BASE_URL`. Restart Vite after editing these values. See [API_CONTRACT.md](API_CONTRACT.md) for the exact endpoint and response contract.
+Copy `.env.example` to `.env.local`, set `VITE_DATA_MODE=api`, and leave `VITE_API_BASE_URL` blank for local development. Run the Python backend on port 8000; Vite forwards `/api` requests to it so session cookies work whether you open `localhost:5173` or `127.0.0.1:5173`. Restart Vite after editing these values. For a deployment with a separate API origin, set `VITE_API_BASE_URL` explicitly and configure cookies and CORS for that deployment. See [API_CONTRACT.md](API_CONTRACT.md) for the exact endpoint and response contract.
 
 The existing backend supports `/api/chat` with `{message}` and `{reply}`. This adapter preserves that shape. **Authentication, document APIs, and server-side permissions are still missing in the backend.** Live mode requires those endpoints and never falls back to demo or unrestricted chat. The backend must filter authorized documents before sending context to the LLM. Backend source files have not been changed.
 

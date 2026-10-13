@@ -4,9 +4,9 @@ from sentence_transformers import SentenceTransformer
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-def generate_embeddings(chunks):
+def generate_embeddings(chunks, *, revision=None, device=None):
     """Convert text chunks into numerical vector embeddings."""
-    model = SentenceTransformer(MODEL_NAME)
+    model = SentenceTransformer(MODEL_NAME, revision=revision, device=device)
 
     embeddings = model.encode(
         chunks,
